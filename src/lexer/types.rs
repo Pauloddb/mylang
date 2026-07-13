@@ -4,8 +4,7 @@ use std::fmt;
 pub struct Token {
     pub kind: TokenKind,
     pub lexeme: String,
-    pub start: Pos,
-    pub end: Pos,
+    pub span: Span,
 }
 
 impl Token {
@@ -13,17 +12,85 @@ impl Token {
         Self {
             lexeme: lexeme.into(),
             kind,
-            start,
-            end,
+            span: Span { start, end },
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Span {
+    pub start: Pos,
+    pub end: Pos,
+}
+
+impl Span {
+    /// Cria span a partir de posição inicial e tamanho do lexeme
+    pub fn from_pos(start: Pos, len: usize) -> Self {
+        Self {
+            start,
+            end: Pos {
+                line: start.line,
+                col: start.col + len, // simplificado — não conta newlines
+                byte_offset: start.byte_offset + len,
+            },
+        }
+    }
+
+    /// Cria span de um único token
+    pub fn from_token(token: &Token) -> Self {
+        token.span
+    }
+
+    /// Mescla dois spans (do início do primeiro até o fim do segundo)
+    pub fn merge(a: &Span, b: &Span) -> Self {
+        Self {
+            start: a.start,
+            end: b.end,
+        }
+    }
+
+    /// Mescla múltiplos spans (útil para listas de args)
+    pub fn merge_many(spans: &[Span]) -> Option<Self> {
+        if spans.is_empty() {
+            return None;
+        }
+        Some(Self {
+            start: spans.first().unwrap().start,
+            end: spans.last().unwrap().end,
+        })
+    }
+
+    /// Span vazio (para placeholders)
+    pub fn dummy() -> Self {
+        Self {
+            start: Pos::new(0, 0, 0),
+            end: Pos::new(0, 0, 0),
+        }
+    }
+}
+
+impl fmt::Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} - {}", self.start, self.end)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pos {
     pub line: usize,
     pub col: usize,
     pub byte_offset: usize,
+}
+
+impl Pos {
+    /// Construtor simples
+    pub fn new(line: usize, col: usize, byte_offset: usize) -> Self {
+        Self {
+            line,
+            col,
+            byte_offset,
+        }
+    }
 }
 
 impl fmt::Display for Pos {
@@ -86,6 +153,8 @@ pub enum Op {
     BitAnd,
     BitOr,
     BitXor,
+    Shl,
+    Shr,
 
     Not,
     And,
@@ -107,6 +176,7 @@ pub enum Delim {
     Semicolon,
     Comma,
     Dot,
+    Arrow,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -128,6 +198,8 @@ pub enum Keyword {
     Func,
     Return,
     Rec,
+
+    Struct,
 }
 
 impl Keyword {
@@ -150,6 +222,8 @@ impl Keyword {
             "func" => Some(Self::Func),
             "return" => Some(Self::Return),
             "rec" => Some(Self::Rec),
+
+            "struct" => Some(Self::Struct),
 
             _ => None,
         }

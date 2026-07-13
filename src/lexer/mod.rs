@@ -173,6 +173,9 @@ impl<'a> Lexer<'a> {
                 if self.current() == Some('-') {
                     self.bump();
                     TokenKind::Op(Op::MinusMinus)
+                } else if self.current() == Some('>') {
+                    self.bump();
+                    TokenKind::Delim(Delim::Arrow)
                 } else {
                     TokenKind::Op(Op::Sub)
                 }
@@ -244,6 +247,9 @@ impl<'a> Lexer<'a> {
                 if let Some('=') = self.current() {
                     self.bump();
                     TokenKind::Op(Op::Ge)
+                } else if let Some('>') = self.current() {
+                    self.bump();
+                    TokenKind::Op(Op::Shr)
                 } else {
                     TokenKind::Op(Op::Gt)
                 }
@@ -254,6 +260,9 @@ impl<'a> Lexer<'a> {
                 if let Some('=') = self.current() {
                     self.bump();
                     TokenKind::Op(Op::Le)
+                } else if let Some('<') = self.current() {
+                    self.bump();
+                    TokenKind::Op(Op::Shl)
                 } else {
                     TokenKind::Op(Op::Lt)
                 }
