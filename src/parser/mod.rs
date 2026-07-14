@@ -687,8 +687,12 @@ impl Parser {
         let cond = self.parse_expression()?;
 
         self.consume(
+            &TokenKind::Delim(Delim::Semicolon),
+            "Expected ';' after condition",
+        )?;
+        self.consume(
             &TokenKind::Keyword(Keyword::Then),
-            "Expected 'then' after condition in if statements",
+            "Expected 'then' after condition",
         )?;
 
         let then_branch = self.block_expr()?;
@@ -726,6 +730,11 @@ impl Parser {
         let start_span = self.next().span.clone();
 
         let cond = self.parse_expression()?;
+
+        self.consume(
+            &TokenKind::Delim(Delim::Semicolon),
+            "Expected ';' after condition",
+        )?;
 
         self.consume(
             &TokenKind::Keyword(Keyword::Do),
@@ -833,11 +842,16 @@ impl Parser {
             TokenKind::Keyword(Keyword::Struct) => self.struct_decl(false),
             _ => {
                 let expr = self.parse_expression()?;
-                let end_tok = self.consume(
-                    &TokenKind::Delim(Delim::Semicolon),
-                    "Expected ';' after expression",
-                )?;
-                let _span = Span::merge(&expr.span(), &end_tok.span);
+
+                match &expr {
+                    Expr::If { .. } => {}
+                    _ => {
+                        self.consume(
+                            &TokenKind::Delim(Delim::Semicolon),
+                            "Expected ';' after expression",
+                        )?;
+                    }
+                }
                 Ok(Stmt::Expr(expr))
             }
         }

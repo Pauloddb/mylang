@@ -11,16 +11,16 @@ cargo run -- test-files/test.my
 
 ## Types
 
-| Type | Syntax | Example |
-|------|--------|---------|
-| `int` | Integer | `42` |
-| `float` | Float | `3.14` |
-| `bool` | Boolean | `true`, `false` |
-| `string` | String | `"hello"` |
-| `void` | Void | `nil` |
-| `T[]` | Array | `[1, 2, 3]` |
-| `func(params) -> ret` | Function | `func(a: int) -> int { a + 1; }` |
-| `struct { ... }` | Struct | `struct Point { x: int, y: int }` |
+| Type                  | Syntax   | Example                           |
+| --------------------- | -------- | --------------------------------- |
+| `int`                 | Integer  | `42`                              |
+| `float`               | Float    | `3.14`                            |
+| `bool`                | Boolean  | `true`, `false`                   |
+| `string`              | String   | `"hello"`                         |
+| `void`                | Void     | `nil`                             |
+| `T[]`                 | Array    | `[1, 2, 3]`                       |
+| `func(params) -> ret` | Function | `func(a: int) -> int { a + 1; }`  |
+| `struct { ... }`      | Struct   | `struct Point { x: int, y: int }` |
 
 ## Syntax
 
@@ -74,11 +74,11 @@ def px = p.x;
 
 ```mylang
 # if/then/else (expression)
-def max = if a > b then { a; } else { b; };
+def max = if a > b; then { a; } else { b; };
 
 # while loop
 mut i = 0;
-while i < 10 do {
+while i < 10; do {
     i = i + 1;
 };
 ```
@@ -87,75 +87,75 @@ while i < 10 do {
 
 **Arithmetic:**
 
-| Operator | Description |
-|----------|-------------|
-| `+` | Addition |
-| `-` | Subtraction |
-| `*` | Multiplication |
-| `/` | Division (returns float) |
-| `%` | Modulo |
-| `**` | Power |
+| Operator | Description              |
+| -------- | ------------------------ |
+| `+`      | Addition                 |
+| `-`      | Subtraction              |
+| `*`      | Multiplication           |
+| `/`      | Division (returns float) |
+| `%`      | Modulo                   |
+| `**`     | Power                    |
 
 **Comparison:**
 
-| Operator | Description |
-|----------|-------------|
-| `==` | Equal |
-| `!=` | Not equal |
-| `<` | Less than |
-| `<=` | Less or equal |
-| `>` | Greater than |
-| `>=` | Greater or equal |
+| Operator | Description      |
+| -------- | ---------------- |
+| `==`     | Equal            |
+| `!=`     | Not equal        |
+| `<`      | Less than        |
+| `<=`     | Less or equal    |
+| `>`      | Greater than     |
+| `>=`     | Greater or equal |
 
 **Logical:**
 
 | Operator | Description |
-|----------|-------------|
-| `&&` | Logical and |
-| `\|\|` | Logical or |
-| `!` | Logical not |
+| -------- | ----------- |
+| `&&`     | Logical and |
+| `\|\|`   | Logical or  |
+| `!`      | Logical not |
 
 **Bitwise:**
 
 | Operator | Description |
-|----------|-------------|
-| `&` | Bitwise and |
-| `\|` | Bitwise or |
-| `^` | Bitwise xor |
-| `<<` | Shift left |
-| `>>` | Shift right |
+| -------- | ----------- |
+| `&`      | Bitwise and |
+| `\|`     | Bitwise or  |
+| `^`      | Bitwise xor |
+| `<<`     | Shift left  |
+| `>>`     | Shift right |
 
 **Other:**
 
-| Operator | Description |
-|----------|-------------|
-| `=` | Assignment |
-| `++` | Increment |
-| `--` | Decrement |
-| `as` | Type cast |
-| `.` | Property access |
-| `::` | Module path |
-| `()` | Function call |
-| `[]` | Index access |
+| Operator | Description     |
+| -------- | --------------- |
+| `=`      | Assignment      |
+| `++`     | Increment       |
+| `--`     | Decrement       |
+| `as`     | Type cast       |
+| `.`      | Property access |
+| `::`     | Module path     |
+| `()`     | Function call   |
+| `[]`     | Index access    |
 
 **Precedence (highest to lowest):**
 
-| Precedence | Operator | Associativity |
-|------------|----------|---------------|
-| 14 | `.`, `::`, `(`, `[`, `{` | Left |
-| 13 | `**` | Right |
-| 12 | `*`, `/`, `%` | Left |
-| 11 | `+`, `-` | Left |
-| 10 | `<<`, `>>` | Left |
-| 9 | `as` | Left |
-| 8 | `&` | Left |
-| 7 | `^` | Left |
-| 6 | `\|` | Left |
-| 5 | `<`, `<=`, `>`, `>=` | Left |
-| 4 | `==`, `!=` | Left |
-| 3 | `&&` | Left |
-| 2 | `\|\|` | Left |
-| 1 | `=` | Right |
+| Precedence | Operator                 | Associativity |
+| ---------- | ------------------------ | ------------- |
+| 14         | `.`, `::`, `(`, `[`, `{` | Left          |
+| 13         | `**`                     | Right         |
+| 12         | `*`, `/`, `%`            | Left          |
+| 11         | `+`, `-`                 | Left          |
+| 10         | `<<`, `>>`               | Left          |
+| 9          | `as`                     | Left          |
+| 8          | `&`                      | Left          |
+| 7          | `^`                      | Left          |
+| 6          | `\|`                     | Left          |
+| 5          | `<`, `<=`, `>`, `>=`     | Left          |
+| 4          | `==`, `!=`               | Left          |
+| 3          | `&&`                     | Left          |
+| 2          | `\|\|`                   | Left          |
+| 1          | `=`                      | Right         |
 
 **Prefix operators:** `-`, `!`, `++`, `--`
 
@@ -248,12 +248,12 @@ def first_x = points[0].x;
 Source (.my) --> Lexer --> Tokens --> Parser --> AST --> TypeChecker --> TypedAST
 ```
 
-| Module | Files | Lines | Description |
-|--------|-------|-------|-------------|
-| **Lexer** | `src/lexer/` | ~570 | Tokenization with span tracking (file, line, col) |
-| **Parser** | `src/parser/` | ~1020 | Pratt parser (expressions) + recursive descent (statements) |
-| **TypeChecker** | `src/typechecker/` | ~1560 | Bidirectional type inference/checking with scope management |
-| **Properties** | `src/properties.rs` | ~130 | Built-in property resolution for String, Array, Struct, Module |
+| Module          | Files               | Lines | Description                                                    |
+| --------------- | ------------------- | ----- | -------------------------------------------------------------- |
+| **Lexer**       | `src/lexer/`        | ~570  | Tokenization with span tracking (file, line, col)              |
+| **Parser**      | `src/parser/`       | ~1020 | Pratt parser (expressions) + recursive descent (statements)    |
+| **TypeChecker** | `src/typechecker/`  | ~1560 | Bidirectional type inference/checking with scope management    |
+| **Properties**  | `src/properties.rs` | ~130  | Built-in property resolution for String, Array, Struct, Module |
 
 ### Key Design Decisions
 
