@@ -11,7 +11,7 @@ use std::{
     rc::Rc,
 };
 
-use pratt_parsing::EXTENSION;
+use mylang::EXTENSION;
 
 use crate::{
     lexer::{

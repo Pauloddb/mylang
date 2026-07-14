@@ -1,5 +1,5 @@
 [package]
-name = "pratt-parsing"
+name = "mylang"
 version = "0.1.0"
 edition = "2024"
 
