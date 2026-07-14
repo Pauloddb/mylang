@@ -167,6 +167,8 @@ pub enum Keyword {
     Then,
 
     While,
+    Break,
+    Continue,
     Do,
 
     Nil,
@@ -195,6 +197,8 @@ impl Keyword {
             "then" => Some(Self::Then),
 
             "while" => Some(Self::While),
+            "break" => Some(Self::Break),
+            "continue" => Some(Self::Continue),
             "do" => Some(Self::Do),
 
             "nil" => Some(Self::Nil),

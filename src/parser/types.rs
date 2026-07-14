@@ -142,6 +142,8 @@ pub enum Stmt {
         span: Span,
     },
     Return(Option<Expr>, Span),
+    Break(Span),
+    Continue(Span),
 }
 
 impl Stmt {
@@ -152,6 +154,8 @@ impl Stmt {
             Stmt::While { span, .. } => span.clone(),
             Stmt::Return(_, span) => span.clone(),
             Stmt::StructDecl { span, .. } => span.clone(),
+            Stmt::Break(span) => span.clone(),
+            Stmt::Continue(span) => span.clone(),
         }
     }
 }

@@ -823,6 +823,26 @@ impl Parser {
         })
     }
 
+    fn break_stmt(&mut self) -> Result<Stmt> {
+        let start_span = self.next().span.clone();
+        let end_tok = self.consume(
+            &TokenKind::Delim(Delim::Semicolon),
+            "Expected ';' after break",
+        )?;
+        let span = Span::merge(&start_span, &end_tok.span);
+        Ok(Stmt::Break(span))
+    }
+
+    fn continue_stmt(&mut self) -> Result<Stmt> {
+        let start_span = self.next().span.clone();
+        let end_tok = self.consume(
+            &TokenKind::Delim(Delim::Semicolon),
+            "Expected ';' after break",
+        )?;
+        let span = Span::merge(&start_span, &end_tok.span);
+        Ok(Stmt::Continue(span))
+    }
+
     fn parse_stmt(&mut self) -> Result<Stmt> {
         match self.peek().kind {
             TokenKind::Keyword(Keyword::Pub) => {
@@ -840,6 +860,8 @@ impl Parser {
             TokenKind::Keyword(Keyword::While) => self.while_stmt(),
             TokenKind::Keyword(Keyword::Return) => self.return_stmt(),
             TokenKind::Keyword(Keyword::Struct) => self.struct_decl(false),
+            TokenKind::Keyword(Keyword::Break) => self.break_stmt(),
+            TokenKind::Keyword(Keyword::Continue) => self.continue_stmt(),
             _ => {
                 let expr = self.parse_expression()?;
 

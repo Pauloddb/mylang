@@ -7,7 +7,7 @@ pub enum TypeError {
     #[error("[{span}] undefined variable: {name}")]
     UndefinedVar { name: String, span: Span },
 
-    #[error("[{span}] cannot assign to immutable variable `{name}`")]
+    #[error("[{span}] immutable assign: cannot assign to immutable variable `{name}`")]
     ImmutableAssign { name: String, span: Span },
 
     #[error("[{span}] invalid cast: cannot cast `{from}` to `{to}`")]
@@ -26,14 +26,14 @@ pub enum TypeError {
         span: Span,
     },
 
-    #[error("[{span}] cannot compare type `{left}` to type `{right}`")]
+    #[error("[{span}] invalid comparison: cannot compare type `{left}` to type `{right}`")]
     InvalidComparison {
         left: String,
         right: String,
         span: Span,
     },
 
-    #[error("[{span}] invalid binary operator: {op} on {left} and {right}")]
+    #[error("[{span}] invalid binary operation: {op} on {left} and {right}")]
     InvalidBinaryOp {
         op: String,
         left: String,
@@ -41,7 +41,7 @@ pub enum TypeError {
         span: Span,
     },
 
-    #[error("[{span}] invalid unary operator: {op} on {operand}")]
+    #[error("[{span}] invalid unary operation: {op} on {operand}")]
     InvalidUnaryOp {
         op: String,
         operand: String,
@@ -101,4 +101,10 @@ pub enum TypeError {
 
     #[error("{msg}")]
     ParseError { msg: String },
+
+    #[error("[{span}] break outside loop")]
+    BreakOutsideLoop { span: Span },
+
+    #[error("[{span}] continue outside loop")]
+    ContinueOutsideLoop { span: Span },
 }

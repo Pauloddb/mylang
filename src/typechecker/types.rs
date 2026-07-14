@@ -247,6 +247,8 @@ pub enum TypedStmt {
         span: Span,
     },
     Return(Option<TypedExpr>, Span),
+    Break(Span),
+    Continue(Span),
 }
 
 #[derive(Debug, Clone)]

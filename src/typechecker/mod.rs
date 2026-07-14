@@ -38,6 +38,7 @@ pub struct TypeChecker {
     current_file: RefCell<PathBuf>,
     module_exports: RefCell<Vec<(String, Type)>>,
     module_cache: RefCell<HashMap<String, Type>>,
+    is_inside_loop: RefCell<bool>,
 }
 
 impl TypeChecker {
@@ -49,6 +50,7 @@ impl TypeChecker {
             current_file: RefCell::new(path),
             module_cache: RefCell::new(HashMap::new()),
             module_exports: RefCell::new(vec![]),
+            is_inside_loop: RefCell::new(false),
         }
     }
 
@@ -663,8 +665,27 @@ impl TypeChecker {
                                 });
                             }
 
+                            let old_loop = self.is_inside_loop.replace(true);
+
                             self.infer_expr(body, None)?;
+
+                            self.is_inside_loop.replace(old_loop);
+
                             Type::Void
+                        }
+                        Stmt::Break(span) => {
+                            if *self.is_inside_loop.borrow() {
+                                Type::Void
+                            } else {
+                                return Err(TypeError::BreakOutsideLoop { span: span.clone() });
+                            }
+                        }
+                        Stmt::Continue(span) => {
+                            if *self.is_inside_loop.borrow() {
+                                Type::Void
+                            } else {
+                                return Err(TypeError::ContinueOutsideLoop { span: span.clone() });
+                            }
                         }
                     };
                 }
@@ -1066,7 +1087,12 @@ impl TypeChecker {
                 }
 
                 let typed_cond = self.check_expr(cond)?;
+
+                let old_loop = self.is_inside_loop.replace(true);
+
                 let typed_body = self.check_expr(body)?;
+
+                self.is_inside_loop.replace(old_loop);
 
                 Ok(TypedStmt::While {
                     cond: Box::new(typed_cond),
@@ -1098,6 +1124,20 @@ impl TypeChecker {
                     }
                 } else {
                     Err(TypeError::ReturnOutsideFunction { span: span.clone() })
+                }
+            }
+            Stmt::Break(span) => {
+                if *self.is_inside_loop.borrow() {
+                    Ok(TypedStmt::Break(span.clone()))
+                } else {
+                    Err(TypeError::BreakOutsideLoop { span: span.clone() })
+                }
+            }
+            Stmt::Continue(span) => {
+                if *self.is_inside_loop.borrow() {
+                    Ok(TypedStmt::Continue(span.clone()))
+                } else {
+                    Err(TypeError::ContinueOutsideLoop { span: span.clone() })
                 }
             }
         }
