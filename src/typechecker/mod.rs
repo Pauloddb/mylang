@@ -272,11 +272,24 @@ impl TypeChecker {
 
                         let prop_info = property_info(&obj_ty, prop, span.clone())?;
 
-                        if !prop_info.is_mutable || !prop_info.needs_mutable_owner {
+                        if !prop_info.is_mutable {
                             return Err(TypeError::ImmutableAssign {
                                 name: format!("{}.{}", obj_ty, prop),
                                 span: span.clone(),
                             });
+                        }
+
+                        if prop_info.needs_mutable_owner {
+                            if let Expr::Ident(name, _) = object.as_ref() {
+                                if let Some(binding) = self.lookup_var(name) {
+                                    if !binding.is_mutable {
+                                        return Err(TypeError::ImmutableAssign {
+                                            name: format!("{}.{}", obj_ty, prop),
+                                            span: span.clone(),
+                                        });
+                                    }
+                                }
+                            }
                         }
 
                         if prop_info.ty != value_ty {
@@ -294,6 +307,17 @@ impl TypeChecker {
                         index,
                         span,
                     } => {
+                        if let Expr::Ident(name, _) = object.as_ref() {
+                            if let Some(binding) = self.lookup_var(name) {
+                                if !binding.is_mutable {
+                                    return Err(TypeError::ImmutableAssign {
+                                        name: name.clone(),
+                                        span: span.clone(),
+                                    });
+                                }
+                            }
+                        }
+
                         let obj_ty = self.infer_expr(object, None)?;
                         let index_ty = self.infer_expr(index, None)?;
 

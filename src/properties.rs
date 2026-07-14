@@ -95,8 +95,8 @@ pub fn property_info(ty: &Type, prop: &str, span: Span) -> Result<PropertyInfo, 
             match field {
                 Some((_, ty)) => Ok(PropertyInfo {
                     ty: ty.clone(),
-                    is_mutable: false,
-                    needs_mutable_owner: false,
+                    is_mutable: true,
+                    needs_mutable_owner: true,
                 }),
                 _ => Err(TypeError::UndefinedProperty {
                     ty: ty.to_string(),
