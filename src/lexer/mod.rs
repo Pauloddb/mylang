@@ -9,10 +9,11 @@ pub struct Lexer<'a> {
     src: Peekable<Chars<'a>>,
     input: &'a str,
     pos: Pos,
+    file: String,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(input: &'a str) -> Self {
+    pub fn new(input: &'a str, file: String) -> Self {
         Self {
             src: input.chars().peekable(),
             input,
@@ -21,6 +22,7 @@ impl<'a> Lexer<'a> {
                 col: 1,
                 byte_offset: 0,
             },
+            file,
         }
     }
 
@@ -146,7 +148,12 @@ impl<'a> Lexer<'a> {
             }
             Some(':') => {
                 self.bump();
-                TokenKind::Delim(Delim::Colon)
+                if self.current() == Some(':') {
+                    self.bump();
+                    TokenKind::Delim(Delim::DoubleColon)
+                } else {
+                    TokenKind::Delim(Delim::Colon)
+                }
             }
             Some(';') => {
                 self.bump();
@@ -302,6 +309,7 @@ impl<'a> Lexer<'a> {
             }
             Some(c) => {
                 return Err(LexError {
+                    file: self.file.clone(),
                     pos: start,
                     message: format!("Unexpected char: {}", c),
                 });
@@ -313,7 +321,7 @@ impl<'a> Lexer<'a> {
 
         let lexeme = &self.input[start.byte_offset..end.byte_offset];
 
-        Ok(Token::new(kind, lexeme, start, end))
+        Ok(Token::new(kind, lexeme, self.file.clone(), start, end))
     }
 
     pub fn lex(&mut self) -> Result<Vec<Token>, LexError> {

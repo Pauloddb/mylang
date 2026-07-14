@@ -16,6 +16,7 @@ pub enum Type {
     Void,
     Func { params: Vec<Type>, ret: Box<Type> },
     Struct(Vec<(String, Type)>),
+    Module(Vec<(String, Type)>),
 }
 
 impl Type {
@@ -36,14 +37,14 @@ impl Type {
                     let ch = remainder.chars().nth(i).unwrap();
                     match ch {
                         ')' => {
-                            let ty = Type::from_str(&buf, span, registry)?;
+                            let ty = Type::from_str(&buf, span.clone(), registry)?;
                             params.push(ty);
 
                             buf.clear();
                             break;
                         }
                         ',' => {
-                            let ty = Type::from_str(&buf, span, registry)?;
+                            let ty = Type::from_str(&buf, span.clone(), registry)?;
                             params.push(ty);
 
                             buf.clear();
@@ -75,10 +76,10 @@ impl Type {
 
                 let arrow_index = arrow_index.ok_or(TypeError::UnknownType {
                     name: s.to_string(),
-                    span,
+                    span: span.clone(),
                 })?;
 
-                let ret = Type::from_str(&s[(arrow_index + 2)..], span, registry)?;
+                let ret = Type::from_str(s[(arrow_index + 2)..].trim(), span, registry)?;
 
                 Ok(Self::Func {
                     params,
@@ -132,6 +133,7 @@ impl fmt::Display for Type {
 
                 write!(f, " }}")
             }
+            Type::Module(_) => write!(f, "module"),
         }
     }
 }
@@ -202,6 +204,17 @@ pub enum TypedExpr {
         fields: Vec<(String, TypedExpr)>,
         span: Span,
     },
+    Cast {
+        object: Box<TypedExpr>,
+        target_type: Type,
+        span: Span,
+    },
+    Path {
+        namespace: Box<TypedExpr>,
+        member: String,
+        ty: Type,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -219,11 +232,13 @@ pub enum TypedStmt {
         ty: Type,
         value: Box<TypedExpr>,
         is_mutable: bool,
+        is_public: bool,
         span: Span,
     },
     StructDecl {
         name: String,
         fields: Vec<(String, Type)>,
+        is_public: bool,
         span: Span,
     },
     While {

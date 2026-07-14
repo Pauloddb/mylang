@@ -10,12 +10,13 @@ pub enum TypeError {
     #[error("[{span}] cannot assign to immutable variable `{name}`")]
     ImmutableAssign { name: String, span: Span },
 
-    // #[error("[{span}] invalid cast: cannot cast `{from}` to `{to}`")]
-    // InvalidCast {
-    //     from: String,
-    //     to: String,
-    //     span: Span,
-    // },
+    #[error("[{span}] invalid cast: cannot cast `{from}` to `{to}`")]
+    InvalidCast {
+        from: String,
+        to: String,
+        span: Span,
+    },
+
     #[error(
         "[{span}] type mismatch: expected `{expected}`, found `{found}` (use `as` for explicit conversion)"
     )]
@@ -88,4 +89,16 @@ pub enum TypeError {
 
     #[error("[{span}] cannot define a struct inside a scope")]
     StructDeclInsideScope { span: Span },
+
+    #[error("[{span}] file {path} doesn't exists")]
+    InvalidImportPath { path: String, span: Span },
+
+    #[error("[{span}] type `{ns_ty}` is not a namespace")]
+    InvalidNamespace { ns_ty: String, span: Span },
+
+    #[error("{msg}")]
+    LexError { msg: String },
+
+    #[error("{msg}")]
+    ParseError { msg: String },
 }

@@ -47,13 +47,11 @@ impl Parser {
         } else {
             let tok = self.peek();
             anyhow::bail!(
-                "[{}] {} (found Token {}\n\tkind: {:?}\n\tlexeme: {}\n{})",
-                tok.span.start,
+                "[{}] {} (found Token {{ kind: {:?} lexeme: {} }})",
+                tok.span,
                 msg,
-                "{",
                 tok.kind,
                 tok.lexeme,
-                "}",
             )
         }
     }
@@ -69,18 +67,21 @@ impl Parser {
             TokenKind::Op(Op::BitOr) => Some((70, 71)),
             TokenKind::Op(Op::BitXor) => Some((80, 81)),
             TokenKind::Op(Op::BitAnd) => Some((90, 91)),
-            TokenKind::Op(Op::Shl | Op::Shr) => Some((100, 101)),
-            TokenKind::Op(Op::Add | Op::Sub) => Some((110, 111)),
-            TokenKind::Op(Op::Mul | Op::Div | Op::Mod) => Some((120, 121)),
-            TokenKind::Op(Op::Pow) => Some((130, 129)), // right associative
-            TokenKind::Delim(Delim::Dot | Delim::LParen | Delim::LBracket) => Some((140, 141)),
+            TokenKind::Keyword(Keyword::As) => Some((100, 101)),
+            TokenKind::Op(Op::Shl | Op::Shr) => Some((110, 111)),
+            TokenKind::Op(Op::Add | Op::Sub) => Some((120, 121)),
+            TokenKind::Op(Op::Mul | Op::Div | Op::Mod) => Some((130, 131)),
+            TokenKind::Op(Op::Pow) => Some((140, 139)), // right associative
+            TokenKind::Delim(
+                Delim::Dot | Delim::DoubleColon | Delim::LParen | Delim::LBracket | Delim::LCurly,
+            ) => Some((150, 151)),
             _ => None,
         }
     }
 
     fn prefix_bp(kind: &TokenKind) -> Option<u8> {
         match kind {
-            TokenKind::Op(Op::Not | Op::Sub | Op::PlusPlus | Op::MinusMinus) => Some(110),
+            TokenKind::Op(Op::Not | Op::Sub | Op::PlusPlus | Op::MinusMinus) => Some(130),
             _ => None,
         }
     }
@@ -202,29 +203,20 @@ impl Parser {
         })
     }
 
-    fn parse_struct_literal(&mut self, name: String, start_span: Span) -> Result<Expr> {
-        self.consume(
-            &TokenKind::Delim(Delim::LCurly),
-            "Expected '{' in struct literal",
-        )?;
-
+    fn parse_struct_fields(&mut self) -> Result<Vec<(String, Expr)>> {
         let mut fields = vec![];
-
         if self.peek().kind != TokenKind::Delim(Delim::RCurly) {
             loop {
                 let field_name = self
                     .consume(&TokenKind::Ident, "Expected field name")?
                     .lexeme
                     .clone();
-
                 self.consume(
                     &TokenKind::Delim(Delim::Colon),
                     "Expected ':' after field name",
                 )?;
-
                 let value = self.parse_expression()?;
                 fields.push((field_name, value));
-
                 if self.peek().kind == TokenKind::Delim(Delim::Comma) {
                     self.next();
                 } else {
@@ -232,18 +224,25 @@ impl Parser {
                 }
             }
         }
+        Ok(fields)
+    }
 
+    fn parse_struct_literal(&mut self, name: String, start_span: Span) -> Result<Expr> {
+        self.consume(
+            &TokenKind::Delim(Delim::LCurly),
+            "Expected '{' in struct literal",
+        )?;
+        let fields = self.parse_struct_fields()?;
         let end_tok = self.consume(
             &TokenKind::Delim(Delim::RCurly),
             "Expected '}' after struct literal",
         )?;
         let span = Span::merge(&start_span, &end_tok.span);
-
         Ok(Expr::Struct { name, fields, span })
     }
 
     fn nud(&mut self, token: &Token) -> Result<Expr> {
-        let start_span = token.span;
+        let start_span = token.span.clone();
 
         match token.kind {
             TokenKind::Literal(Literal::Int) => Ok(Expr::Int(token.lexeme.parse()?, start_span)),
@@ -262,6 +261,7 @@ impl Parser {
                 let bp = Self::prefix_bp(&token.kind).unwrap();
                 let right = self.expression(bp)?;
                 let span = Span::merge(&start_span, &right.span());
+
                 Ok(Expr::Unary {
                     op: Op::Sub,
                     right: Box::new(right),
@@ -346,7 +346,7 @@ impl Parser {
 
             _ => anyhow::bail!(
                 "[{}] Unexpected token at start: {:?}",
-                token.span.start,
+                token.span,
                 token.kind
             ),
         }
@@ -355,6 +355,7 @@ impl Parser {
     fn binary(&mut self, left: Expr, op: Op, rbp: u8) -> Result<Expr> {
         let right = self.expression(rbp)?;
         let span = Span::merge(&left.span(), &right.span());
+
         Ok(Expr::Binary {
             op,
             left: Box::new(left),
@@ -366,15 +367,20 @@ impl Parser {
     fn expr_to_target(expr: Expr) -> Result<(AssignTarget, Span)> {
         let span = expr.span();
         match expr {
-            Expr::Ident(name, _) => Ok((AssignTarget::Ident(name, span), span)),
-            Expr::Property { object, prop, .. } => {
-                Ok((AssignTarget::Property { object, prop, span }, span))
-            }
+            Expr::Ident(name, _) => Ok((AssignTarget::Ident(name, span.clone()), span)),
+            Expr::Property { object, prop, .. } => Ok((
+                AssignTarget::Property {
+                    object,
+                    prop,
+                    span: span.clone(),
+                },
+                span,
+            )),
             Expr::Index { object, index, .. } => Ok((
                 AssignTarget::Index {
                     object,
                     index,
-                    span,
+                    span: span.clone(),
                 },
                 span,
             )),
@@ -479,6 +485,35 @@ impl Parser {
                 })
             }
 
+            TokenKind::Delim(Delim::DoubleColon) => {
+                let member = self.consume(&TokenKind::Ident, "Expected identifier after '::'")?;
+                let span = Span::merge(&start_span, &member.span);
+
+                Ok(Expr::Path {
+                    namespace: Box::new(left),
+                    member: member.lexeme.clone(),
+                    span,
+                })
+            }
+
+            TokenKind::Delim(Delim::LCurly) => {
+                if let Expr::Path { member, .. } = &left {
+                    let fields = self.parse_struct_fields()?;
+                    let end_tok = self.consume(
+                        &TokenKind::Delim(Delim::RCurly),
+                        "Expected '}}' after struct literal",
+                    )?;
+                    let span = Span::merge(&start_span, &end_tok.span);
+                    Ok(Expr::Struct {
+                        name: member.clone(),
+                        fields,
+                        span,
+                    })
+                } else {
+                    anyhow::bail!("[{}] Unexpected '{{' after expression", token.span)
+                }
+            }
+
             TokenKind::Delim(Delim::LParen) => {
                 let mut args = vec![];
 
@@ -523,8 +558,20 @@ impl Parser {
                     span,
                 })
             }
+            TokenKind::Keyword(Keyword::As) => {
+                let target_type = self.parse_type()?;
+                let end_span = self.prev().span.clone();
 
-            _ => anyhow::bail!("[{}] Unexpected token: {:?}", token.span.start, token.kind),
+                let span = Span::merge(&start_span, &end_span);
+
+                Ok(Expr::Cast {
+                    object: Box::new(left),
+                    target_type,
+                    span,
+                })
+            }
+
+            _ => anyhow::bail!("[{}] Unexpected token: {:?}", token.span, token.kind),
         }
     }
 
@@ -554,9 +601,9 @@ impl Parser {
         self.expression(0)
     }
 
-    fn var_decl(&mut self) -> Result<Stmt> {
+    fn var_decl(&mut self, is_public: bool) -> Result<Stmt> {
         let start_tok = self.peek();
-        let start_span = start_tok.span;
+        let start_span = start_tok.span.clone();
         let is_mutable = self.next().kind == TokenKind::Keyword(Keyword::Mut);
 
         let name = self
@@ -606,6 +653,7 @@ impl Parser {
             type_annotation,
             value: Box::new(value),
             is_mutable,
+            is_public,
             span,
         })
     }
@@ -649,7 +697,7 @@ impl Parser {
             self.next();
 
             if self.peek().kind == TokenKind::Keyword(Keyword::If) {
-                let else_if_span = self.next().span;
+                let else_if_span = self.next().span.clone();
                 Some(Box::new(self.if_expr(else_if_span)?))
             } else {
                 Some(Box::new(self.block_expr()?))
@@ -675,7 +723,7 @@ impl Parser {
     }
 
     fn while_stmt(&mut self) -> Result<Stmt> {
-        let start_span = self.next().span;
+        let start_span = self.next().span.clone();
 
         let cond = self.parse_expression()?;
 
@@ -696,7 +744,7 @@ impl Parser {
     }
 
     fn return_stmt(&mut self) -> Result<Stmt> {
-        let start_span = self.next().span;
+        let start_span = self.next().span.clone();
 
         let ret_val = if self.peek().kind != TokenKind::Delim(Delim::Semicolon) {
             Some(self.parse_expression()?)
@@ -714,8 +762,8 @@ impl Parser {
         Ok(Stmt::Return(ret_val, span))
     }
 
-    fn struct_decl(&mut self) -> Result<Stmt> {
-        let start_span = self.next().span;
+    fn struct_decl(&mut self, is_public: bool) -> Result<Stmt> {
+        let start_span = self.next().span.clone();
 
         let name = self
             .consume(
@@ -755,21 +803,34 @@ impl Parser {
 
         let end_span = self
             .consume(&TokenKind::Delim(Delim::RCurly), "Expected '}'")?
-            .span;
+            .span
+            .clone();
 
         Ok(Stmt::StructDecl {
             name,
             fields,
+            is_public,
             span: Span::merge(&start_span, &end_span),
         })
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt> {
         match self.peek().kind {
-            TokenKind::Keyword(Keyword::Def | Keyword::Mut) => self.var_decl(),
+            TokenKind::Keyword(Keyword::Pub) => {
+                self.next();
+                match self.peek().kind {
+                    TokenKind::Keyword(Keyword::Def | Keyword::Mut) => self.var_decl(true),
+                    TokenKind::Keyword(Keyword::Struct) => self.struct_decl(true),
+                    _ => anyhow::bail!(
+                        "[{}] keyword `pub` can be only used before `def` or `mut`",
+                        self.prev().span
+                    ),
+                }
+            }
+            TokenKind::Keyword(Keyword::Def | Keyword::Mut) => self.var_decl(false),
             TokenKind::Keyword(Keyword::While) => self.while_stmt(),
             TokenKind::Keyword(Keyword::Return) => self.return_stmt(),
-            TokenKind::Keyword(Keyword::Struct) => self.struct_decl(),
+            TokenKind::Keyword(Keyword::Struct) => self.struct_decl(false),
             _ => {
                 let expr = self.parse_expression()?;
                 let end_tok = self.consume(

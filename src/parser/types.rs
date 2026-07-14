@@ -59,28 +59,40 @@ pub enum Expr {
         index: Box<Expr>,
         span: Span,
     },
+    Cast {
+        object: Box<Expr>,
+        target_type: String,
+        span: Span,
+    },
+    Path {
+        namespace: Box<Expr>,
+        member: String,
+        span: Span,
+    },
 }
 
 impl Expr {
     pub fn span(&self) -> Span {
         match self {
-            Expr::Int(_, span) => *span,
-            Expr::Float(_, span) => *span,
-            Expr::Bool(_, span) => *span,
-            Expr::String(_, span) => *span,
-            Expr::Nil(span) => *span,
-            Expr::ArrayLiteral(_, span) => *span,
-            Expr::Ident(_, span) => *span,
-            Expr::Block(_, span) => *span,
-            Expr::Unary { span, .. } => *span,
-            Expr::Binary { span, .. } => *span,
-            Expr::Call { span, .. } => *span,
-            Expr::Func { span, .. } => *span,
-            Expr::Struct { span, .. } => *span,
-            Expr::Property { span, .. } => *span,
-            Expr::Assign { span, .. } => *span,
-            Expr::If { span, .. } => *span,
-            Expr::Index { span, .. } => *span,
+            Expr::Int(_, span) => span.clone(),
+            Expr::Float(_, span) => span.clone(),
+            Expr::Bool(_, span) => span.clone(),
+            Expr::String(_, span) => span.clone(),
+            Expr::Nil(span) => span.clone(),
+            Expr::ArrayLiteral(_, span) => span.clone(),
+            Expr::Ident(_, span) => span.clone(),
+            Expr::Block(_, span) => span.clone(),
+            Expr::Unary { span, .. } => span.clone(),
+            Expr::Binary { span, .. } => span.clone(),
+            Expr::Call { span, .. } => span.clone(),
+            Expr::Func { span, .. } => span.clone(),
+            Expr::Struct { span, .. } => span.clone(),
+            Expr::Property { span, .. } => span.clone(),
+            Expr::Assign { span, .. } => span.clone(),
+            Expr::If { span, .. } => span.clone(),
+            Expr::Index { span, .. } => span.clone(),
+            Expr::Cast { span, .. } => span.clone(),
+            Expr::Path { span, .. } => span.clone(),
         }
     }
 }
@@ -115,11 +127,13 @@ pub enum Stmt {
         type_annotation: Option<String>,
         value: Box<Expr>,
         is_mutable: bool,
+        is_public: bool,
         span: Span,
     },
     StructDecl {
         name: String,
         fields: Vec<(String, String)>,
+        is_public: bool,
         span: Span,
     },
     While {
@@ -134,10 +148,10 @@ impl Stmt {
     pub fn span(&self) -> Span {
         match self {
             Stmt::Expr(expr) => expr.span(),
-            Stmt::VarDecl { span, .. } => *span,
-            Stmt::While { span, .. } => *span,
-            Stmt::Return(_, span) => *span,
-            Stmt::StructDecl { span, .. } => *span,
+            Stmt::VarDecl { span, .. } => span.clone(),
+            Stmt::While { span, .. } => span.clone(),
+            Stmt::Return(_, span) => span.clone(),
+            Stmt::StructDecl { span, .. } => span.clone(),
         }
     }
 }

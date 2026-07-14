@@ -105,6 +105,21 @@ pub fn property_info(ty: &Type, prop: &str, span: Span) -> Result<PropertyInfo, 
                 }),
             }
         }
+        Type::Module(exports) => {
+            let export = exports.iter().find(|(name, _)| name == prop);
+            match export {
+                Some((_, ty)) => Ok(PropertyInfo {
+                    ty: ty.clone(),
+                    is_mutable: false,
+                    needs_mutable_owner: false,
+                }),
+                _ => Err(TypeError::UndefinedProperty {
+                    ty: ty.to_string(),
+                    prop: prop.to_string(),
+                    span,
+                }),
+            }
+        }
         _ => Err(TypeError::NoProperties {
             ty: ty.to_string(),
             span,

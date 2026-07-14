@@ -8,70 +8,42 @@ pub struct Token {
 }
 
 impl Token {
-    pub fn new(kind: TokenKind, lexeme: impl Into<String>, start: Pos, end: Pos) -> Self {
+    pub fn new(
+        kind: TokenKind,
+        lexeme: impl Into<String>,
+        file: String,
+        start: Pos,
+        end: Pos,
+    ) -> Self {
         Self {
             lexeme: lexeme.into(),
             kind,
-            span: Span { start, end },
+            span: Span { file, start, end },
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Span {
+    pub file: String,
     pub start: Pos,
     pub end: Pos,
 }
 
 impl Span {
-    /// Cria span a partir de posição inicial e tamanho do lexeme
-    pub fn from_pos(start: Pos, len: usize) -> Self {
-        Self {
-            start,
-            end: Pos {
-                line: start.line,
-                col: start.col + len, // simplificado — não conta newlines
-                byte_offset: start.byte_offset + len,
-            },
-        }
-    }
-
-    /// Cria span de um único token
-    pub fn from_token(token: &Token) -> Self {
-        token.span
-    }
-
     /// Mescla dois spans (do início do primeiro até o fim do segundo)
     pub fn merge(a: &Span, b: &Span) -> Self {
         Self {
+            file: a.file.clone(),
             start: a.start,
             end: b.end,
-        }
-    }
-
-    /// Mescla múltiplos spans (útil para listas de args)
-    pub fn merge_many(spans: &[Span]) -> Option<Self> {
-        if spans.is_empty() {
-            return None;
-        }
-        Some(Self {
-            start: spans.first().unwrap().start,
-            end: spans.last().unwrap().end,
-        })
-    }
-
-    /// Span vazio (para placeholders)
-    pub fn dummy() -> Self {
-        Self {
-            start: Pos::new(0, 0, 0),
-            end: Pos::new(0, 0, 0),
         }
     }
 }
 
 impl fmt::Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} - {}", self.start, self.end)
+        write!(f, "{}:{} - {}", self.file, self.start, self.end)
     }
 }
 
@@ -101,13 +73,18 @@ impl fmt::Display for Pos {
 
 #[derive(Debug, Clone)]
 pub struct LexError {
+    pub file: String,
     pub pos: Pos,
     pub message: String,
 }
 
 impl fmt::Display for LexError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "lexer error at [{}]: {}", self.pos, self.message)
+        write!(
+            f,
+            "{}:{}: lexer error: {}",
+            self.file, self.pos, self.message
+        )
     }
 }
 
@@ -173,6 +150,7 @@ pub enum Delim {
     RCurly,
 
     Colon,
+    DoubleColon,
     Semicolon,
     Comma,
     Dot,
@@ -200,6 +178,10 @@ pub enum Keyword {
     Rec,
 
     Struct,
+
+    As,
+
+    Pub,
 }
 
 impl Keyword {
@@ -224,6 +206,10 @@ impl Keyword {
             "rec" => Some(Self::Rec),
 
             "struct" => Some(Self::Struct),
+
+            "as" => Some(Self::As),
+
+            "pub" => Some(Self::Pub),
 
             _ => None,
         }

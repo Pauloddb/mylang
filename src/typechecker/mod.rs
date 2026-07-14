@@ -3,11 +3,25 @@ pub mod error;
 pub mod registry;
 pub mod types;
 
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
+
+use pratt_parsing::EXTENSION;
 
 use crate::{
-    lexer::types::Op,
-    parser::types::{AssignTarget, Ast, Expr, Stmt},
+    lexer::{
+        Lexer,
+        types::{Op, Span},
+    },
+    parser::{
+        Parser,
+        types::{AssignTarget, Ast, Expr, Stmt},
+    },
     properties::property_info,
     typechecker::{
         env::{Binding, TypeEnv},
@@ -21,14 +35,20 @@ pub struct TypeChecker {
     env: RefCell<Rc<TypeEnv>>,
     registry: Rc<RefCell<TypeRegistry>>,
     current_ret: RefCell<Option<Type>>,
+    current_file: RefCell<PathBuf>,
+    module_exports: RefCell<Vec<(String, Type)>>,
+    module_cache: RefCell<HashMap<String, Type>>,
 }
 
 impl TypeChecker {
-    pub fn new() -> Self {
+    pub fn new(path: PathBuf) -> Self {
         Self {
             env: RefCell::new(Rc::new(TypeEnv::new())),
             registry: Rc::new(RefCell::new(TypeRegistry::new())),
             current_ret: RefCell::new(None),
+            current_file: RefCell::new(path),
+            module_cache: RefCell::new(HashMap::new()),
+            module_exports: RefCell::new(vec![]),
         }
     }
 
@@ -43,13 +63,82 @@ impl TypeChecker {
         self.env.replace(parent);
     }
 
+    fn define_public(&self, name: String, ty: &Type) {
+        let mut i = 0;
+        let exports = self.module_exports.borrow().clone();
+
+        while i < exports.len() {
+            let (exp_name, _) = &exports[i];
+            if exp_name == &name {
+                self.module_exports.borrow_mut().remove(i);
+            }
+            i += 1;
+        }
+
+        self.module_exports.borrow_mut().push((name, ty.clone()));
+    }
+
     ///Allows shadowing
-    fn define_var(&self, name: String, ty: &Type, is_mutable: bool) {
-        self.env.borrow().define(name, ty.clone(), is_mutable)
+    fn define_var(&self, name: String, ty: &Type, is_mutable: bool, is_public: bool) {
+        if is_public {
+            self.define_public(name.clone(), ty);
+        }
+
+        self.env
+            .borrow()
+            .define(name, ty.clone(), is_mutable, is_public)
     }
 
     fn lookup_var(&self, name: &str) -> Option<Binding> {
         self.env.borrow().lookup(name)
+    }
+
+    fn resolve_import(&self, path: String, span: Span) -> Result<Type, TypeError> {
+        let cached_key = path.clone();
+
+        if let Some(cached) = self.module_cache.borrow().get(&cached_key) {
+            return Ok(cached.clone());
+        }
+
+        let dir = self.current_file.borrow().parent().unwrap().to_path_buf();
+        let file_path = dir.join(format!("{}.{}", path, EXTENSION));
+
+        let old_file = self.current_file.replace(file_path);
+        let old_exports = self.module_exports.replace(vec![]);
+
+        // Processa e garante restore mesmo em erro
+        let result = (|| -> Result<Type, TypeError> {
+            let content = fs::read_to_string::<&Path>(self.current_file.borrow().as_ref())
+                .map_err(|_| TypeError::InvalidImportPath {
+                    path: cached_key.clone(),
+                    span: span.clone(),
+                })?;
+
+            let tokens = Lexer::new(&content, self.current_file.borrow().display().to_string())
+                .lex()
+                .map_err(|e| TypeError::LexError { msg: e.to_string() })?;
+
+            let ast = Parser::new(tokens)
+                .parse()
+                .map_err(|e| TypeError::ParseError { msg: e.to_string() })?;
+
+            self.check(&ast)?;
+
+            Ok(Type::Module(vec![])) // placeholder
+        })();
+
+        // Restore GARANTIDO
+        let module_exports = self.module_exports.replace(old_exports);
+        *self.current_file.borrow_mut() = old_file;
+
+        result?;
+
+        let module = Type::Module(module_exports);
+        self.module_cache
+            .borrow_mut()
+            .insert(cached_key, module.clone());
+
+        Ok(module)
     }
 
     fn infer_expr(&self, expr: &Expr, expected: Option<&Type>) -> Result<Type, TypeError> {
@@ -63,7 +152,7 @@ impl TypeChecker {
                 .lookup_var(name)
                 .ok_or(TypeError::UndefinedVar {
                     name: name.clone(),
-                    span: *span,
+                    span: span.clone(),
                 })?
                 .ty),
             Expr::ArrayLiteral(elements, span) => {
@@ -71,7 +160,7 @@ impl TypeChecker {
                     if let Some(ty) = expected {
                         return Ok(ty.clone());
                     } else {
-                        return Err(TypeError::AmbiguousArrayType { span: *span });
+                        return Err(TypeError::AmbiguousArrayType { span: span.clone() });
                     }
                 }
 
@@ -84,7 +173,7 @@ impl TypeChecker {
                         return Err(TypeError::Mismatch {
                             expected: first_ty.to_string(),
                             found: ty.to_string(),
-                            span: *span,
+                            span: span.clone(),
                         });
                     }
                 }
@@ -99,10 +188,14 @@ impl TypeChecker {
             } => {
                 let mut param_types = vec![];
                 for p in params.iter() {
-                    param_types.push(Type::from_str(&p.ty, *span, &self.registry.borrow())?);
+                    param_types.push(Type::from_str(
+                        &p.ty,
+                        span.clone(),
+                        &self.registry.borrow(),
+                    )?);
                 }
 
-                let ret = Type::from_str(ret_ty, *span, &self.registry.borrow())?;
+                let ret = Type::from_str(ret_ty, span.clone(), &self.registry.borrow())?;
                 self.current_ret.borrow_mut().replace(ret.clone());
 
                 Ok(Type::Func {
@@ -122,19 +215,19 @@ impl TypeChecker {
                 let registry = self.registry.borrow();
                 let struct_fields = registry.get_fields(name).ok_or(TypeError::UnknownType {
                     name: name.clone(),
-                    span: *span,
+                    span: span.clone(),
                 })?;
 
                 let struct_type = registry.resolve(name).ok_or(TypeError::UnknownType {
                     name: name.clone(),
-                    span: *span,
+                    span: span.clone(),
                 })?;
 
                 if typed_fields != *struct_fields {
                     return Err(TypeError::Mismatch {
                         expected: struct_type.to_string(),
                         found: Type::Struct(typed_fields.clone()).to_string(),
-                        span: *span,
+                        span: span.clone(),
                     });
                 }
 
@@ -153,14 +246,14 @@ impl TypeChecker {
                             .lookup_var(name)
                             .ok_or(TypeError::UndefinedVar {
                                 name: name.clone(),
-                                span: *span,
+                                span: span.clone(),
                             })?
                             .clone();
 
                         if !binding.is_mutable {
                             return Err(TypeError::ImmutableAssign {
                                 name: name.clone(),
-                                span: *span,
+                                span: span.clone(),
                             });
                         }
 
@@ -168,7 +261,7 @@ impl TypeChecker {
                             return Err(TypeError::Mismatch {
                                 expected: binding.ty.to_string(),
                                 found: value_ty.to_string(),
-                                span: *span,
+                                span: span.clone(),
                             });
                         }
 
@@ -177,12 +270,12 @@ impl TypeChecker {
                     AssignTarget::Property { object, prop, span } => {
                         let obj_ty = self.infer_expr(object, None)?;
 
-                        let prop_info = property_info(&obj_ty, prop, *span)?;
+                        let prop_info = property_info(&obj_ty, prop, span.clone())?;
 
                         if !prop_info.is_mutable || !prop_info.needs_mutable_owner {
                             return Err(TypeError::ImmutableAssign {
                                 name: format!("{}.{}", obj_ty, prop),
-                                span: *span,
+                                span: span.clone(),
                             });
                         }
 
@@ -190,7 +283,7 @@ impl TypeChecker {
                             return Err(TypeError::Mismatch {
                                 expected: prop_info.ty.to_string(),
                                 found: value_ty.to_string(),
-                                span: *span,
+                                span: span.clone(),
                             });
                         }
 
@@ -208,7 +301,7 @@ impl TypeChecker {
                             return Err(TypeError::Mismatch {
                                 expected: Type::Int.to_string(),
                                 found: index_ty.to_string(),
-                                span: *span,
+                                span: span.clone(),
                             });
                         }
 
@@ -218,7 +311,7 @@ impl TypeChecker {
                             _ => {
                                 return Err(TypeError::NotIndexable {
                                     ty: obj_ty.to_string(),
-                                    span: *span,
+                                    span: span.clone(),
                                 });
                             }
                         };
@@ -227,7 +320,7 @@ impl TypeChecker {
                             return Err(TypeError::Mismatch {
                                 expected: elem_ty.to_string(),
                                 found: value_ty.to_string(),
-                                span: *span,
+                                span: span.clone(),
                             });
                         }
 
@@ -245,7 +338,7 @@ impl TypeChecker {
                     _ => Err(TypeError::InvalidUnaryOp {
                         op: format!("{:?}", op),
                         operand: right_ty.to_string(),
-                        span: *span,
+                        span: span.clone(),
                     }),
                 }
             }
@@ -299,7 +392,7 @@ impl TypeChecker {
                             Err(TypeError::InvalidComparison {
                                 left: left_ty.to_string(),
                                 right: right_ty.to_string(),
-                                span: *span,
+                                span: span.clone(),
                             })
                         }
                     }
@@ -317,11 +410,20 @@ impl TypeChecker {
                         op: format!("{:?}", op),
                         left: left_ty.to_string(),
                         right: right_ty.to_string(),
-                        span: *span,
+                        span: span.clone(),
                     }),
                 }
             }
             Expr::Call { callee, args, span } => {
+                // Import builtin
+                if let Expr::Ident(name, _) = callee.as_ref() {
+                    if name == "import" {
+                        if let Expr::String(path, _) = &args[0] {
+                            return self.resolve_import(path.to_string(), span.clone());
+                        }
+                    }
+                }
+
                 let callee_ty = self.infer_expr(callee, None)?;
 
                 if let Type::Func { params, ret } = callee_ty {
@@ -329,7 +431,7 @@ impl TypeChecker {
                         return Err(TypeError::ArgCountMismatch {
                             expected: params.len(),
                             found: args.len(),
-                            span: *span,
+                            span: span.clone(),
                         });
                     }
 
@@ -343,7 +445,7 @@ impl TypeChecker {
                             return Err(TypeError::Mismatch {
                                 expected: p.to_string(),
                                 found: a.to_string(),
-                                span: *span,
+                                span: span.clone(),
                             });
                         }
                     }
@@ -353,13 +455,13 @@ impl TypeChecker {
                     Err(TypeError::Mismatch {
                         expected: "func".into(),
                         found: callee_ty.to_string(),
-                        span: *span,
+                        span: span.clone(),
                     })
                 }
             }
             Expr::Property { object, prop, span } => {
                 let obj_ty = self.infer_expr(object, None)?;
-                let prop_info = property_info(&obj_ty, prop, *span)?;
+                let prop_info = property_info(&obj_ty, prop, span.clone())?;
                 Ok(prop_info.ty)
             }
             Expr::If {
@@ -374,7 +476,7 @@ impl TypeChecker {
                     return Err(TypeError::Mismatch {
                         expected: Type::Bool.to_string(),
                         found: cond_ty.to_string(),
-                        span: *span,
+                        span: span.clone(),
                     });
                 }
 
@@ -387,7 +489,7 @@ impl TypeChecker {
                         return Err(TypeError::Mismatch {
                             expected: then_branch_ty.to_string(),
                             found: else_branch_ty.to_string(),
-                            span: *span,
+                            span: span.clone(),
                         });
                     }
                 }
@@ -406,7 +508,7 @@ impl TypeChecker {
                     return Err(TypeError::Mismatch {
                         expected: Type::Int.to_string(),
                         found: index_ty.to_string(),
-                        span: *span,
+                        span: span.clone(),
                     });
                 }
 
@@ -415,7 +517,7 @@ impl TypeChecker {
                     Type::Array(elem) => Ok(*elem),
                     _ => Err(TypeError::NotIndexable {
                         ty: obj_ty.to_string(),
-                        span: *span,
+                        span: span.clone(),
                     }),
                 }
             }
@@ -432,11 +534,14 @@ impl TypeChecker {
                             type_annotation,
                             value,
                             is_mutable,
+                            is_public,
                             span,
                         } => {
                             let ann_ty = type_annotation
                                 .as_ref()
-                                .map(|ann| Type::from_str(ann, *span, &self.registry.borrow()))
+                                .map(|ann| {
+                                    Type::from_str(ann, span.clone(), &self.registry.borrow())
+                                })
                                 .transpose()?;
 
                             let value_ty = self.infer_expr(value, ann_ty.as_ref())?;
@@ -449,7 +554,7 @@ impl TypeChecker {
                                     return Err(TypeError::Mismatch {
                                         expected: ann_ty.to_string(),
                                         found: value_ty.to_string(),
-                                        span: *span,
+                                        span: span.clone(),
                                     });
                                 }
                                 ann_ty
@@ -457,27 +562,44 @@ impl TypeChecker {
                                 value_ty
                             };
 
-                            self.define_var(name.clone(), &ty, *is_mutable);
+                            self.define_var(name.clone(), &ty, *is_mutable, *is_public);
                             Type::Void
                         }
-                        Stmt::StructDecl { name, fields, span } => {
+                        Stmt::StructDecl {
+                            name,
+                            fields,
+                            is_public,
+                            span,
+                        } => {
                             if self.env.borrow().is_inside_scope() {
-                                return Err(TypeError::StructDeclInsideScope { span: *span });
+                                return Err(TypeError::StructDeclInsideScope {
+                                    span: span.clone(),
+                                });
                             }
 
                             let typed_fields: Vec<_> = fields
                                 .iter()
                                 .map(|(f_name, f_type)| {
-                                    let ty =
-                                        Type::from_str(f_type, *span, &self.registry.borrow())?;
+                                    let ty = Type::from_str(
+                                        f_type,
+                                        span.clone(),
+                                        &self.registry.borrow(),
+                                    )?;
                                     Ok((f_name.clone(), ty))
                                 })
                                 .collect::<Result<Vec<_>, TypeError>>()?;
 
+                            if *is_public {
+                                self.define_public(
+                                    name.clone(),
+                                    &Type::Struct(typed_fields.clone()),
+                                );
+                            }
+
                             self.registry.borrow_mut().register(
                                 name.clone(),
                                 typed_fields,
-                                *span,
+                                span.clone(),
                             )?;
                             Type::Void
                         }
@@ -492,7 +614,7 @@ impl TypeChecker {
                                         return Err(TypeError::ReturnMismatch {
                                             expected: expected.to_string(),
                                             found: ty.to_string(),
-                                            span: *span,
+                                            span: span.clone(),
                                         });
                                     }
 
@@ -501,7 +623,9 @@ impl TypeChecker {
                                     return Ok(Type::Void);
                                 }
                             } else {
-                                return Err(TypeError::ReturnOutsideFunction { span: *span });
+                                return Err(TypeError::ReturnOutsideFunction {
+                                    span: span.clone(),
+                                });
                             }
                         }
                         Stmt::While { cond, body, span } => {
@@ -511,7 +635,7 @@ impl TypeChecker {
                                 return Err(TypeError::Mismatch {
                                     expected: Type::Bool.to_string(),
                                     found: cond_ty.to_string(),
-                                    span: *span,
+                                    span: span.clone(),
                                 });
                             }
 
@@ -524,26 +648,69 @@ impl TypeChecker {
                 self.pop_scope();
                 Ok(last_ty)
             }
+            Expr::Cast {
+                object,
+                target_type,
+                span,
+            } => {
+                let target_ty = Type::from_str(target_type, span.clone(), &self.registry.borrow())?;
+                let obj_ty = self.infer_expr(object, None)?;
+
+                match (&obj_ty, &target_ty) {
+                    (Type::Int, Type::Float) => Ok(Type::Float),
+                    (Type::Float, Type::Int) => Ok(Type::Int), // trunca o float em int
+                    (t1, t2) if t1 == t2 => Ok(target_ty.clone()),
+                    _ => Err(TypeError::InvalidCast {
+                        from: obj_ty.to_string(),
+                        to: target_ty.to_string(),
+                        span: span.clone(),
+                    }),
+                }
+            }
+            Expr::Path {
+                namespace,
+                member,
+                span,
+            } => {
+                let ns_ty = self.infer_expr(namespace, None)?;
+
+                match &ns_ty {
+                    Type::Module(exports) => {
+                        let (_, ty) = exports.iter().find(|(name, _)| name == member).ok_or(
+                            TypeError::UndefinedProperty {
+                                ty: ns_ty.to_string(),
+                                prop: member.clone(),
+                                span: span.clone(),
+                            },
+                        )?;
+                        Ok(ty.clone())
+                    }
+                    _ => Err(TypeError::InvalidNamespace {
+                        ns_ty: ns_ty.to_string(),
+                        span: span.clone(),
+                    }),
+                }
+            }
         }
     }
 
     fn check_expr(&self, expr: &Expr) -> Result<TypedExpr, TypeError> {
         match expr {
-            Expr::Int(n, span) => Ok(TypedExpr::Int(*n, *span)),
-            Expr::Float(n, span) => Ok(TypedExpr::Float(*n, *span)),
-            Expr::Bool(b, span) => Ok(TypedExpr::Bool(*b, *span)),
-            Expr::String(s, span) => Ok(TypedExpr::String(s.clone(), *span)),
-            Expr::Nil(span) => Ok(TypedExpr::Nil(*span)),
+            Expr::Int(n, span) => Ok(TypedExpr::Int(*n, span.clone())),
+            Expr::Float(n, span) => Ok(TypedExpr::Float(*n, span.clone())),
+            Expr::Bool(b, span) => Ok(TypedExpr::Bool(*b, span.clone())),
+            Expr::String(s, span) => Ok(TypedExpr::String(s.clone(), span.clone())),
+            Expr::Nil(span) => Ok(TypedExpr::Nil(span.clone())),
             Expr::Ident(name, span) => {
                 let ty = self.infer_expr(expr, None)?;
-                Ok(TypedExpr::Ident(name.clone(), ty, *span))
+                Ok(TypedExpr::Ident(name.clone(), ty, span.clone()))
             }
             Expr::ArrayLiteral(elements, span) => {
                 if elements.is_empty() {
                     return Ok(TypedExpr::ArrayLiteral(
                         vec![],
                         Type::Array(Box::new(Type::Void)),
-                        *span,
+                        span.clone(),
                     ));
                 }
 
@@ -555,7 +722,7 @@ impl TypeChecker {
                     typed_elements.push(self.check_expr(elem)?);
                 }
 
-                Ok(TypedExpr::ArrayLiteral(typed_elements, ty, *span))
+                Ok(TypedExpr::ArrayLiteral(typed_elements, ty, span.clone()))
             }
             Expr::Func {
                 params,
@@ -575,14 +742,14 @@ impl TypeChecker {
 
                 let mut typed_params = vec![];
                 for p in params.iter() {
-                    let param_ty = Type::from_str(&p.ty, *span, &self.registry.borrow())?;
+                    let param_ty = Type::from_str(&p.ty, span.clone(), &self.registry.borrow())?;
 
-                    self.define_var(p.name.clone(), &param_ty, false);
+                    self.define_var(p.name.clone(), &param_ty, false, false);
 
                     typed_params.push(TypedParam {
                         name: p.name.clone(),
                         ty: param_ty,
-                        span: *span,
+                        span: span.clone(),
                     });
                 }
 
@@ -598,7 +765,7 @@ impl TypeChecker {
                     body: Box::new(typed_body),
                     name: name.clone(),
                     ret,
-                    span: *span,
+                    span: span.clone(),
                 })
             }
             Expr::Struct { name, fields, span } => {
@@ -613,7 +780,7 @@ impl TypeChecker {
                 Ok(TypedExpr::Struct {
                     name: name.clone(),
                     fields: typed_fields,
-                    span: *span,
+                    span: span.clone(),
                 })
             }
             Expr::Unary { op, right, span } => {
@@ -624,7 +791,7 @@ impl TypeChecker {
                     op: *op,
                     right: Box::new(typed_right),
                     ty,
-                    span: *span,
+                    span: span.clone(),
                 })
             }
             Expr::Binary {
@@ -642,12 +809,28 @@ impl TypeChecker {
                     left: Box::new(typed_left),
                     right: Box::new(typed_right),
                     ty,
-                    span: *span,
+                    span: span.clone(),
                 })
             }
             Expr::Call { callee, args, span } => {
                 let ty = self.infer_expr(expr, None)?;
-                let typed_callee = self.check_expr(callee)?;
+
+                let typed_callee = if let Expr::Ident(name, _) = callee.as_ref() {
+                    if name == "import" {
+                        TypedExpr::Ident(
+                            name.clone(),
+                            Type::Func {
+                                params: vec![Type::String],
+                                ret: Box::new(ty.clone()),
+                            },
+                            span.clone(),
+                        )
+                    } else {
+                        self.check_expr(callee)?
+                    }
+                } else {
+                    self.check_expr(callee)?
+                };
 
                 let mut typed_args = vec![];
 
@@ -659,7 +842,7 @@ impl TypeChecker {
                     callee: Box::new(typed_callee),
                     args: typed_args,
                     ty,
-                    span: *span,
+                    span: span.clone(),
                 })
             }
             Expr::Property { object, prop, span } => {
@@ -670,7 +853,7 @@ impl TypeChecker {
                     object: Box::new(typed_obj),
                     prop: prop.clone(),
                     ty,
-                    span: *span,
+                    span: span.clone(),
                 })
             }
             Expr::Assign {
@@ -685,7 +868,7 @@ impl TypeChecker {
                     target: target.clone(),
                     value: Box::new(typed_value),
                     ty,
-                    span: *span,
+                    span: span.clone(),
                 })
             }
             Expr::Block(stmts, span) => {
@@ -697,7 +880,7 @@ impl TypeChecker {
                     typed_stmts.push(self.check_stmt(stmt)?);
                 }
 
-                Ok(TypedExpr::Block(typed_stmts, ty, *span))
+                Ok(TypedExpr::Block(typed_stmts, ty, span.clone()))
             }
             Expr::Index {
                 object,
@@ -712,7 +895,7 @@ impl TypeChecker {
                     object: Box::new(typed_obj),
                     index: Box::new(typed_index),
                     ty,
-                    span: *span,
+                    span: span.clone(),
                 })
             }
             Expr::If {
@@ -736,7 +919,32 @@ impl TypeChecker {
                     then_branch: typed_then_branch,
                     else_branch: typed_else_branch,
                     ty,
-                    span: *span,
+                    span: span.clone(),
+                })
+            }
+            Expr::Cast { object, span, .. } => {
+                let ty = self.infer_expr(expr, None)?;
+                let typed_obj = self.check_expr(object)?;
+
+                Ok(TypedExpr::Cast {
+                    object: Box::new(typed_obj),
+                    target_type: ty,
+                    span: span.clone(),
+                })
+            }
+            Expr::Path {
+                namespace,
+                member,
+                span,
+            } => {
+                let ty = self.infer_expr(expr, None)?;
+                let typed_ns = self.check_expr(namespace)?;
+
+                Ok(TypedExpr::Path {
+                    namespace: Box::new(typed_ns),
+                    member: member.clone(),
+                    ty,
+                    span: span.clone(),
                 })
             }
         }
@@ -750,11 +958,12 @@ impl TypeChecker {
                 type_annotation,
                 value,
                 is_mutable,
+                is_public,
                 span,
             } => {
                 let ann_ty = type_annotation
                     .as_ref()
-                    .map(|ann| Type::from_str(ann, *span, &self.registry.borrow()))
+                    .map(|ann| Type::from_str(ann, span.clone(), &self.registry.borrow()))
                     .transpose()?;
 
                 let value_ty = self.infer_expr(value, ann_ty.as_ref())?;
@@ -764,7 +973,7 @@ impl TypeChecker {
                         return Err(TypeError::Mismatch {
                             expected: ann.to_string(),
                             found: value_ty.to_string(),
-                            span: *span,
+                            span: span.clone(),
                         });
                     }
                     value_ty
@@ -772,7 +981,7 @@ impl TypeChecker {
                     value_ty
                 };
 
-                self.define_var(name.clone(), &ty, *is_mutable);
+                self.define_var(name.clone(), &ty, *is_mutable, *is_public);
 
                 let typed_value = self.check_expr(value)?;
 
@@ -781,31 +990,44 @@ impl TypeChecker {
                     ty,
                     value: Box::new(typed_value),
                     is_mutable: *is_mutable,
-                    span: *span,
+                    is_public: *is_public,
+                    span: span.clone(),
                 })
             }
-            Stmt::StructDecl { name, fields, span } => {
+            Stmt::StructDecl {
+                name,
+                fields,
+                is_public,
+                span,
+            } => {
                 // Struct declarations must be done in first scope
                 if self.env.borrow().is_inside_scope() {
-                    return Err(TypeError::StructDeclInsideScope { span: *span });
+                    return Err(TypeError::StructDeclInsideScope { span: span.clone() });
                 }
 
                 let typed_fields = fields
                     .iter()
                     .map(|(f_name, f_ty)| {
-                        let ty = Type::from_str(f_ty, *span, &self.registry.borrow())?;
+                        let ty = Type::from_str(f_ty, span.clone(), &self.registry.borrow())?;
                         Ok((f_name.clone(), ty))
                     })
                     .collect::<Result<Vec<_>, TypeError>>()?;
 
-                self.registry
-                    .borrow_mut()
-                    .register(name.clone(), typed_fields.clone(), *span)?;
+                self.registry.borrow_mut().register(
+                    name.clone(),
+                    typed_fields.clone(),
+                    span.clone(),
+                )?;
+
+                if *is_public {
+                    self.define_public(name.clone(), &Type::Struct(typed_fields.clone()));
+                }
 
                 Ok(TypedStmt::StructDecl {
                     name: name.clone(),
                     fields: typed_fields,
-                    span: *span,
+                    is_public: *is_public,
+                    span: span.clone(),
                 })
             }
             Stmt::While { cond, body, span } => {
@@ -815,7 +1037,7 @@ impl TypeChecker {
                     return Err(TypeError::Mismatch {
                         expected: Type::Bool.to_string(),
                         found: cond_ty.to_string(),
-                        span: *span,
+                        span: span.clone(),
                     });
                 }
 
@@ -825,7 +1047,7 @@ impl TypeChecker {
                 Ok(TypedStmt::While {
                     cond: Box::new(typed_cond),
                     body: Box::new(typed_body),
-                    span: *span,
+                    span: span.clone(),
                 })
             }
             Stmt::Return(ret_expr, span) => {
@@ -839,25 +1061,25 @@ impl TypeChecker {
                             return Err(TypeError::ReturnMismatch {
                                 expected: expected.to_string(),
                                 found: ty.to_string(),
-                                span: *span,
+                                span: span.clone(),
                             });
                         }
 
                         let typed_ret_expr = self.check_expr(e)?;
 
                         *self.current_ret.borrow_mut() = None;
-                        Ok(TypedStmt::Return(Some(typed_ret_expr), *span))
+                        Ok(TypedStmt::Return(Some(typed_ret_expr), span.clone()))
                     } else {
-                        Ok(TypedStmt::Return(None, *span))
+                        Ok(TypedStmt::Return(None, span.clone()))
                     }
                 } else {
-                    Err(TypeError::ReturnOutsideFunction { span: *span })
+                    Err(TypeError::ReturnOutsideFunction { span: span.clone() })
                 }
             }
         }
     }
 
-    pub fn check(&mut self, ast: &Ast) -> Result<TypedAst, TypeError> {
+    pub fn check(&self, ast: &Ast) -> Result<TypedAst, TypeError> {
         let mut typed_stmts = vec![];
 
         for stmt in ast.stmts.iter() {

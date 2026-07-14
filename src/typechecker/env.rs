@@ -12,6 +12,7 @@ pub struct TypeEnv {
 pub struct Binding {
     pub ty: Type,
     pub is_mutable: bool,
+    pub is_public: bool,
 }
 
 impl TypeEnv {
@@ -35,10 +36,15 @@ impl TypeEnv {
     }
 
     ///Allows shadowing
-    pub fn define(&self, name: String, ty: Type, is_mutable: bool) {
-        self.bindings
-            .borrow_mut()
-            .insert(name, Binding { ty, is_mutable });
+    pub fn define(&self, name: String, ty: Type, is_mutable: bool, is_public: bool) {
+        self.bindings.borrow_mut().insert(
+            name,
+            Binding {
+                ty,
+                is_mutable,
+                is_public,
+            },
+        );
     }
 
     pub fn lookup(&self, name: &str) -> Option<Binding> {
