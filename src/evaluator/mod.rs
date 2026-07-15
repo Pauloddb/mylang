@@ -142,7 +142,7 @@ impl Evaluator {
 
                 Ok(Value::Array(Rc::new(RefCell::new(values))))
             }
-            TypedExpr::Struct { name, fields, span } => {
+            TypedExpr::Struct { name, fields, .. } => {
                 let mut fields_values = vec![];
 
                 for (f_name, f_expr) in fields.iter() {
@@ -155,11 +155,7 @@ impl Evaluator {
                 })
             }
             TypedExpr::Func {
-                params,
-                name,
-                ret,
-                body,
-                span,
+                params, name, body, ..
             } => {
                 let value = Value::Func {
                     params: params.clone(),
@@ -293,8 +289,8 @@ impl Evaluator {
                 op,
                 left,
                 right,
-                ty,
                 span,
+                ..
             } => {
                 let l = self.eval_expr(left)?;
                 let r = self.eval_expr(right)?;
@@ -463,8 +459,8 @@ impl Evaluator {
             TypedExpr::Assign {
                 target,
                 value,
-                ty,
                 span,
+                ..
             } => {
                 let val = self.eval_expr(value)?;
 
@@ -593,10 +589,7 @@ impl Evaluator {
                 }
             }
             TypedExpr::Call {
-                callee,
-                args,
-                ty,
-                span,
+                callee, args, span, ..
             } => {
                 if let TypedExpr::Ident(name, _, _) = callee.as_ref()
                     && name == "import"
@@ -641,10 +634,7 @@ impl Evaluator {
                 }
             }
             TypedExpr::Property {
-                object,
-                prop,
-                ty,
-                span,
+                object, prop, span, ..
             } => {
                 let obj_val = self.eval_expr(object)?;
 
@@ -655,8 +645,8 @@ impl Evaluator {
             TypedExpr::Index {
                 object,
                 index,
-                ty,
                 span,
+                ..
             } => {
                 let obj_val = self.eval_expr(object)?;
                 let index_val = self.eval_expr(index)?;
@@ -707,7 +697,7 @@ impl Evaluator {
             TypedExpr::Cast {
                 object,
                 target_type,
-                span,
+                ..
             } => {
                 let obj_val = self.eval_expr(object)?;
 
@@ -721,8 +711,7 @@ impl Evaluator {
                 cond,
                 then_branch,
                 else_branch,
-                ty,
-                span,
+                ..
             } => {
                 let cond_val = self.eval_expr(cond)?;
 
@@ -751,8 +740,8 @@ impl Evaluator {
             TypedExpr::Path {
                 namespace,
                 member,
-                ty,
                 span,
+                ..
             } => {
                 let ns_val = self.eval_expr(namespace)?;
 
@@ -794,7 +783,7 @@ impl Evaluator {
                 name,
                 fields,
                 is_public,
-                span,
+                ..
             } => {
                 if *is_public {
                     let struct_val = Value::Struct {
@@ -814,11 +803,10 @@ impl Evaluator {
             }
             TypedStmt::VarDecl {
                 name,
-                ty,
                 value,
                 is_mutable,
                 is_public,
-                span,
+                ..
             } => {
                 let val = self.eval_expr(value)?;
 

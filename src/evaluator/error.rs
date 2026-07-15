@@ -30,7 +30,7 @@ pub enum EvalError {
     #[error("[{span}] value {value} has no properties")]
     NoProperties { value: String, span: Span },
 
-    #[error("[{span}] value {value} has no property `prop`")]
+    #[error("[{span}] value {value} has no property `{prop}`")]
     UnknownProperty {
         value: String,
         prop: String,

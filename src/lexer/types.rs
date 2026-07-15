@@ -54,17 +54,6 @@ pub struct Pos {
     pub byte_offset: usize,
 }
 
-impl Pos {
-    /// Construtor simples
-    pub fn new(line: usize, col: usize, byte_offset: usize) -> Self {
-        Self {
-            line,
-            col,
-            byte_offset,
-        }
-    }
-}
-
 impl fmt::Display for Pos {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.line, self.col)
