@@ -1,13 +1,13 @@
+mod evaluator;
 mod lexer;
 mod parser;
-mod properties;
 mod typechecker;
 
 use std::{path::PathBuf, str::FromStr};
 
 use anyhow::{Context, Result};
 
-use crate::{lexer::Lexer, parser::Parser, typechecker::TypeChecker};
+use crate::{evaluator::Evaluator, lexer::Lexer, parser::Parser, typechecker::TypeChecker};
 
 fn main() -> Result<()> {
     let args = std::env::args().collect::<Vec<String>>();
@@ -26,6 +26,8 @@ fn main() -> Result<()> {
 
     let typed_ast = TypeChecker::new(PathBuf::from_str(&filepath)?).check(&ast)?;
 
-    dbg!(&typed_ast);
+    let result = Evaluator::new(PathBuf::from_str(&filepath)?).eval(&typed_ast)?;
+
+    dbg!(result);
     Ok(())
 }

@@ -2,7 +2,6 @@ use std::fmt;
 
 use crate::{
     lexer::types::{Op, Span},
-    parser::types::AssignTarget,
     typechecker::{error::TypeError, registry::TypeRegistry},
 };
 
@@ -138,7 +137,22 @@ impl fmt::Display for Type {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypedAssignTarget {
+    Ident(String, Span),
+    Property {
+        object: Box<TypedExpr>,
+        prop: String,
+        span: Span,
+    },
+    Index {
+        object: Box<TypedExpr>,
+        index: Box<TypedExpr>,
+        span: Span,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypedExpr {
     Int(i64, Span),
     Float(f64, Span),
@@ -161,7 +175,7 @@ pub enum TypedExpr {
         span: Span,
     },
     Assign {
-        target: AssignTarget,
+        target: TypedAssignTarget,
         value: Box<TypedExpr>,
         ty: Type,
         span: Span,
@@ -217,14 +231,14 @@ pub enum TypedExpr {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TypedParam {
     pub name: String,
     pub ty: Type,
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypedStmt {
     Expr(TypedExpr),
     VarDecl {

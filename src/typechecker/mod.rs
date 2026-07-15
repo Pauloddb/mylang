@@ -1,5 +1,6 @@
 mod env;
 pub mod error;
+mod properties;
 pub mod registry;
 pub mod types;
 
@@ -22,12 +23,12 @@ use crate::{
         Parser,
         types::{AssignTarget, Ast, Expr, Stmt},
     },
-    properties::property_info,
     typechecker::{
         env::{Binding, TypeEnv},
         error::TypeError,
+        properties::property_info,
         registry::TypeRegistry,
-        types::{Type, TypedAst, TypedExpr, TypedParam, TypedStmt},
+        types::{Type, TypedAssignTarget, TypedAst, TypedExpr, TypedParam, TypedStmt},
     },
 };
 
@@ -253,7 +254,7 @@ impl TypeChecker {
                             .clone();
 
                         if !binding.is_mutable {
-                            return Err(TypeError::ImmutableAssign {
+                            return Err(TypeError::ImmutableMutation {
                                 name: name.clone(),
                                 span: span.clone(),
                             });
@@ -275,7 +276,7 @@ impl TypeChecker {
                         let prop_info = property_info(&obj_ty, prop, span.clone())?;
 
                         if !prop_info.is_mutable {
-                            return Err(TypeError::ImmutableAssign {
+                            return Err(TypeError::ImmutableMutation {
                                 name: format!("{}.{}", obj_ty, prop),
                                 span: span.clone(),
                             });
@@ -285,7 +286,7 @@ impl TypeChecker {
                             if let Expr::Ident(name, _) = object.as_ref() {
                                 if let Some(binding) = self.lookup_var(name) {
                                     if !binding.is_mutable {
-                                        return Err(TypeError::ImmutableAssign {
+                                        return Err(TypeError::ImmutableMutation {
                                             name: format!("{}.{}", obj_ty, prop),
                                             span: span.clone(),
                                         });
@@ -312,7 +313,7 @@ impl TypeChecker {
                         if let Expr::Ident(name, _) = object.as_ref() {
                             if let Some(binding) = self.lookup_var(name) {
                                 if !binding.is_mutable {
-                                    return Err(TypeError::ImmutableAssign {
+                                    return Err(TypeError::ImmutableMutation {
                                         name: name.clone(),
                                         span: span.clone(),
                                     });
@@ -357,6 +358,52 @@ impl TypeChecker {
             Expr::Unary { op, right, span } => {
                 let right_ty = self.infer_expr(right, None)?;
 
+                if *op == Op::PlusPlus || *op == Op::MinusMinus {
+                    match right.as_ref() {
+                        Expr::Ident(name, _) => {
+                            if let Some(binding) = self.lookup_var(name) {
+                                if !binding.is_mutable {
+                                    return Err(TypeError::ImmutableMutation {
+                                        name: name.clone(),
+                                        span: span.clone(),
+                                    });
+                                }
+                            }
+                        }
+                        Expr::Property { object, .. } => {
+                            if let Expr::Ident(name, _) = object.as_ref() {
+                                if let Some(binding) = self.lookup_var(name) {
+                                    if !binding.is_mutable {
+                                        return Err(TypeError::ImmutableMutation {
+                                            name: name.clone(),
+                                            span: span.clone(),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        Expr::Index { object, .. } => {
+                            if let Expr::Ident(name, _) = object.as_ref() {
+                                if let Some(binding) = self.lookup_var(name) {
+                                    if !binding.is_mutable {
+                                        return Err(TypeError::ImmutableMutation {
+                                            name: name.clone(),
+                                            span: span.clone(),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            return Err(TypeError::InvalidUnaryOp {
+                                op: format!("{:?}", op),
+                                operand: right_ty.to_string(),
+                                span: span.clone(),
+                            });
+                        }
+                    }
+                }
+
                 match (op, &right_ty) {
                     (Op::Sub | Op::MinusMinus | Op::PlusPlus, Type::Int) => Ok(Type::Int),
                     (Op::Sub | Op::MinusMinus | Op::PlusPlus, Type::Float) => Ok(Type::Float),
@@ -382,6 +429,7 @@ impl TypeChecker {
                     (Op::Add, Type::Float, Type::Int) => Ok(Type::Float),
                     (Op::Add, Type::Int, Type::Float) => Ok(Type::Float),
                     (Op::Add, Type::Float, Type::Float) => Ok(Type::Float),
+                    (Op::Add, Type::String, Type::String) => Ok(Type::String),
 
                     (Op::Sub, Type::Int, Type::Int) => Ok(Type::Int),
                     (Op::Sub, Type::Float, Type::Int) => Ok(Type::Float),
@@ -445,7 +493,7 @@ impl TypeChecker {
                 if let Expr::Ident(name, _) = callee.as_ref() {
                     if name == "import" {
                         if let Expr::String(path, _) = &args[0] {
-                            return self.resolve_import(path.to_string(), span.clone());
+                            return self.resolve_import(path.clone(), span.clone());
                         }
                     }
                 }
@@ -909,8 +957,28 @@ impl TypeChecker {
                 let ty = self.infer_expr(expr, None)?;
                 let typed_value = self.check_expr(value)?;
 
+                let typed_target = match target {
+                    AssignTarget::Ident(name, span) => {
+                        TypedAssignTarget::Ident(name.clone(), span.clone())
+                    }
+                    AssignTarget::Index {
+                        object,
+                        index,
+                        span,
+                    } => TypedAssignTarget::Index {
+                        object: Box::new(self.check_expr(object)?),
+                        index: Box::new(self.check_expr(index)?),
+                        span: span.clone(),
+                    },
+                    AssignTarget::Property { object, prop, span } => TypedAssignTarget::Property {
+                        object: Box::new(self.check_expr(object)?),
+                        prop: prop.clone(),
+                        span: span.clone(),
+                    },
+                };
+
                 Ok(TypedExpr::Assign {
-                    target: target.clone(),
+                    target: typed_target,
                     value: Box::new(typed_value),
                     ty,
                     span: span.clone(),

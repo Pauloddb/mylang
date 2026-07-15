@@ -7,8 +7,8 @@ pub enum TypeError {
     #[error("[{span}] undefined variable: {name}")]
     UndefinedVar { name: String, span: Span },
 
-    #[error("[{span}] immutable assign: cannot assign to immutable variable `{name}`")]
-    ImmutableAssign { name: String, span: Span },
+    #[error("[{span}] immutable mutation: cannot mutate immutable variable `{name}`")]
+    ImmutableMutation { name: String, span: Span },
 
     #[error("[{span}] invalid cast: cannot cast `{from}` to `{to}`")]
     InvalidCast {
