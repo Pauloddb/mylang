@@ -41,9 +41,9 @@ def add = func(a: int, b: int) -> int {
     a + b;
 };
 
-# recursive function
-def factorial = rec func(n: int) -> int {
-    if n == 0 || n == 1 then {
+# recursive function (no keyword needed)
+def factorial = func(n: int) -> int {
+    if n == 0 || n == 1; then {
         return 1;
     };
     n * factorial(n - 1);
@@ -68,18 +68,41 @@ def p = Point { x: 10, y: 20 };
 
 # property access
 def px = p.x;
+
+# public struct (exported from modules)
+pub struct Point {
+    x: int,
+    y: int,
+}
 ```
 
 ### Control Flow
 
 ```mylang
-# if/then/else (expression)
+# if/then/else (expression, note the ';' after condition and 'then' keyword)
 def max = if a > b; then { a; } else { b; };
 
-# while loop
+# if without else
+if true; then {
+    def temp = 1;
+}
+
+# while loop (note the ';' after condition and 'do' keyword)
 mut i = 0;
 while i < 10; do {
     i = i + 1;
+};
+
+# break and continue
+mut n = 0;
+while true; do {
+    n = n + 1;
+    if n == 5; then {
+        break;
+    };
+    if n % 2 == 0; then {
+        continue;
+    };
 };
 ```
 
@@ -163,7 +186,8 @@ while i < 10; do {
 
 ```mylang
 def f = 3.14 as int;   # float -> int (truncates)
-def s = 42 as string;   # identity cast
+def g = 42 as float;   # int -> float
+def h = 3.14 as float; # same type (identity)
 ```
 
 ### Arrays
@@ -187,6 +211,21 @@ def len = s.len();          # length
 def upper = s.upcase();     # uppercase
 def lower = s.lowcase();    # lowercase
 def chars = s.chars();      # split into string[]
+def trimmed = "  hi  ".trim(); # trim whitespace
+```
+
+### Type Conversions
+
+```mylang
+# to_str() on primitives
+def n = 42;
+def s = n.to_str();        # int -> string
+
+def pi = 3.14;
+def ps = pi.to_str();      # float -> string
+
+def b = true;
+def bs = b.to_str();       # bool -> string ("true"/"false")
 ```
 
 ### Modules
@@ -205,6 +244,20 @@ pub def add = func(a: int, b: int) -> int {
 };
 ```
 
+### Standard Library
+
+```mylang
+# print without newline
+std::io::print("hello");
+
+# print with newline
+std::io::println("hello");
+
+# read line from stdin with prompt
+def name = std::io::readln("What is your name? ");
+std::io::println("Hello, " + name);
+```
+
 ### Comments
 
 ```mylang
@@ -216,8 +269,8 @@ pub def add = func(a: int, b: int) -> int {
 **Fibonacci:**
 
 ```mylang
-def fib = rec func(n: int) -> int {
-    if n <= 1 then {
+def fib = func(n: int) -> int {
+    if n <= 1; then {
         return n;
     };
     fib(n - 1) + fib(n - 2);
@@ -245,22 +298,25 @@ def first_x = points[0].x;
 ## Architecture
 
 ```
-Source (.my) --> Lexer --> Tokens --> Parser --> AST --> TypeChecker --> TypedAST
+Source (.my) --> Lexer --> Tokens --> Parser --> AST --> TypeChecker --> TypedAST --> Evaluator --> Value
 ```
 
-| Module          | Files               | Lines | Description                                                    |
-| --------------- | ------------------- | ----- | -------------------------------------------------------------- |
-| **Lexer**       | `src/lexer/`        | ~570  | Tokenization with span tracking (file, line, col)              |
-| **Parser**      | `src/parser/`       | ~1020 | Pratt parser (expressions) + recursive descent (statements)    |
-| **TypeChecker** | `src/typechecker/`  | ~1560 | Bidirectional type inference/checking with scope management    |
-| **Properties**  | `src/properties.rs` | ~130  | Built-in property resolution for String, Array, Struct, Module |
+| Module          | Files                   | Description                                                    |
+| --------------- | ----------------------- | -------------------------------------------------------------- |
+| **Lexer**       | `src/lexer/`            | Tokenization with span tracking (file, line, col)              |
+| **Parser**      | `src/parser/`           | Pratt parser (expressions) + recursive descent (statements)    |
+| **TypeChecker** | `src/typechecker/`      | Bidirectional type inference/checking with scope management    |
+| **Evaluator**   | `src/evaluator/`        | Tree-walking evaluator with closures and environment capture   |
+| **Properties**  | `src/*/properties.rs`   | Built-in property resolution for String, Array, Struct, Module |
+| **Builtins**    | `src/*/builtins/mod.rs` | Standard library (`std::io`) and native function registration  |
 
 ### Key Design Decisions
 
 - **Pratt parsing** for expressions: operator precedence is encoded in binding power pairs, making it easy to add new operators
-- **RefCell + Rc** for the type environment: allows shared mutable scope chains without a borrow checker fight
-- **TypedAST** as output: the typechecker produces a fully typed tree, ready for an evaluator
+- **RefCell + Rc** for environments: allows shared mutable scope chains without a borrow checker fight
+- **TypedAST** as intermediate representation: the typechecker produces a fully typed tree, ready for evaluation
 - **`::` for module paths**, `.` for property access: clear syntactic distinction between namespace access and instance field access
+- **Functions as first-class values** with environment capture: closures capture the scope at definition time via `Rc<RefCell<EvalEnv>>`
 
 ### Type System
 
@@ -269,7 +325,7 @@ Source (.my) --> Lexer --> Tokens --> Parser --> AST --> TypeChecker --> TypedAS
 - Type inference on variable declarations (optional annotation)
 - Type checking on function bodies (return type must match)
 - `TypeRegistry` for struct definitions (global, per-file)
-- `TypeEnv` for variable bindings (scoped, with shadowing)
+- `TypeEnv` / `EvalEnv` for variable bindings (scoped, with shadowing)
 
 ## Roadmap
 
@@ -282,9 +338,8 @@ Source (.my) --> Lexer --> Tokens --> Parser --> AST --> TypeChecker --> TypedAS
 - [x] Path access (`mod::member`)
 - [x] Built-in properties (String, Array)
 - [x] Public exports (`pub`)
-- [ ] Evaluator
-- [ ] Standard library (`std::io`, etc.)
-- [ ] Better error messages with suggestions
+- [x] Tree-walking evaluator
+- [x] Closures with captured environments
+- [x] Standard library (`std::io`)
 - [ ] Pattern matching
-- [ ] Closures with captured environments
 - [ ] Generics

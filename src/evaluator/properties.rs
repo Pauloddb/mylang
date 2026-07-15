@@ -49,6 +49,64 @@ pub fn property_info(value: &Value, prop: &str, span: Span) -> Result<PropertyIn
                     is_mutable: false,
                     needs_mutable_owner: false,
                 }),
+                "trim" => Ok(PropertyInfo {
+                    value: Value::NativeFunc(Rc::new(move |_args| {
+                        Ok(Value::String(s.trim().to_string()))
+                    })),
+                    is_mutable: false,
+                    needs_mutable_owner: false,
+                }),
+                _ => Err(EvalError::UnknownProperty {
+                    value: format!("{:?}", value),
+                    prop: prop.to_string(),
+                    span,
+                }),
+            }
+        }
+        Value::Int(n) => {
+            let n = n.clone();
+            match prop {
+                "to_str" => Ok(PropertyInfo {
+                    value: Value::NativeFunc(Rc::new(move |_args| {
+                        Ok(Value::String(n.to_string()))
+                    })),
+                    is_mutable: false,
+                    needs_mutable_owner: false,
+                }),
+                _ => Err(EvalError::UnknownProperty {
+                    value: format!("{:?}", value),
+                    prop: prop.to_string(),
+                    span,
+                }),
+            }
+        }
+        Value::Float(n) => {
+            let n = n.clone();
+            match prop {
+                "to_str" => Ok(PropertyInfo {
+                    value: Value::NativeFunc(Rc::new(move |_args| {
+                        Ok(Value::String(n.to_string()))
+                    })),
+                    is_mutable: false,
+                    needs_mutable_owner: false,
+                }),
+                _ => Err(EvalError::UnknownProperty {
+                    value: format!("{:?}", value),
+                    prop: prop.to_string(),
+                    span,
+                }),
+            }
+        }
+        Value::Bool(b) => {
+            let b = b.clone();
+            match prop {
+                "to_str" => Ok(PropertyInfo {
+                    value: Value::NativeFunc(Rc::new(move |_args| {
+                        Ok(Value::String(b.to_string()))
+                    })),
+                    is_mutable: false,
+                    needs_mutable_owner: false,
+                }),
                 _ => Err(EvalError::UnknownProperty {
                     value: format!("{:?}", value),
                     prop: prop.to_string(),

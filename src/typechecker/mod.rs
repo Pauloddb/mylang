@@ -1,3 +1,4 @@
+mod builtins;
 mod env;
 pub mod error;
 mod properties;
@@ -16,12 +17,12 @@ use mylang::EXTENSION;
 
 use crate::{
     lexer::{
-        Lexer,
         types::{Op, Span},
+        Lexer,
     },
     parser::{
-        Parser,
         types::{AssignTarget, Ast, Expr, Stmt},
+        Parser,
     },
     typechecker::{
         env::{Binding, TypeEnv},
@@ -44,8 +45,11 @@ pub struct TypeChecker {
 
 impl TypeChecker {
     pub fn new(path: PathBuf) -> Self {
+        let env = Rc::new(TypeEnv::new());
+        builtins::register_builtins(&env);
+
         Self {
-            env: RefCell::new(Rc::new(TypeEnv::new())),
+            env: RefCell::new(env),
             registry: Rc::new(RefCell::new(TypeRegistry::new())),
             current_ret: RefCell::new(None),
             current_file: RefCell::new(path),
@@ -818,11 +822,7 @@ impl TypeChecker {
                 Ok(TypedExpr::ArrayLiteral(typed_elements, ty, span.clone()))
             }
             Expr::Func {
-                params,
-                body,
-                name,
-                span,
-                ..
+                params, body, span, ..
             } => {
                 let func_ty = self.infer_expr(expr, None)?;
 
@@ -856,7 +856,7 @@ impl TypeChecker {
                 Ok(TypedExpr::Func {
                     params: typed_params,
                     body: Box::new(typed_body),
-                    name: name.clone(),
+                    name: None,
                     ret,
                     span: span.clone(),
                 })

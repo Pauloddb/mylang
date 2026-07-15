@@ -26,6 +26,7 @@ use crate::{
     },
 };
 
+mod builtins;
 mod env;
 mod error;
 mod properties;
@@ -43,8 +44,11 @@ pub struct Evaluator {
 
 impl Evaluator {
     pub fn new(path: PathBuf) -> Self {
+        let env = Rc::new(EvalEnv::new());
+        builtins::register_builtins(&env);
+
         Self {
-            env: RefCell::new(Rc::new(EvalEnv::new())),
+            env: RefCell::new(env),
             current_file: RefCell::new(path),
             module_cache: RefCell::new(HashMap::new()),
             module_exports: RefCell::new(vec![]),
@@ -155,17 +159,13 @@ impl Evaluator {
                 })
             }
             TypedExpr::Func {
-                params, name, body, ..
+                params, body, ..
             } => {
                 let value = Value::Func {
                     params: params.clone(),
                     body: body.clone(),
                     env: RefCell::new(EvalEnv::child(&self.env.borrow())),
                 };
-
-                if let Some(n) = name {
-                    self.define_var(n.clone(), value.clone(), false);
-                }
 
                 Ok(value)
             }

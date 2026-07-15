@@ -166,7 +166,6 @@ pub enum Keyword {
 
     Func,
     Return,
-    Rec,
 
     Struct,
 
@@ -196,7 +195,6 @@ impl Keyword {
 
             "func" => Some(Self::Func),
             "return" => Some(Self::Return),
-            "rec" => Some(Self::Rec),
 
             "struct" => Some(Self::Struct),
 

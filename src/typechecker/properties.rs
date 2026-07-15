@@ -45,6 +45,59 @@ pub fn property_info(ty: &Type, prop: &str, span: Span) -> Result<PropertyInfo, 
                 is_mutable: false,
                 needs_mutable_owner: false,
             }),
+            "trim" => Ok(PropertyInfo {
+                ty: Type::Func {
+                    params: vec![],
+                    ret: Box::new(Type::String),
+                },
+                is_mutable: false,
+                needs_mutable_owner: false,
+            }),
+            _ => Err(TypeError::UndefinedProperty {
+                ty: ty.to_string(),
+                prop: prop.into(),
+                span,
+            }),
+        },
+        Type::Int => match prop {
+            "to_str" => Ok(PropertyInfo {
+                ty: Type::Func {
+                    params: vec![],
+                    ret: Box::new(Type::String),
+                },
+                is_mutable: false,
+                needs_mutable_owner: false,
+            }),
+            _ => Err(TypeError::UndefinedProperty {
+                ty: ty.to_string(),
+                prop: prop.into(),
+                span,
+            }),
+        },
+        Type::Float => match prop {
+            "to_str" => Ok(PropertyInfo {
+                ty: Type::Func {
+                    params: vec![],
+                    ret: Box::new(Type::String),
+                },
+                is_mutable: false,
+                needs_mutable_owner: false,
+            }),
+            _ => Err(TypeError::UndefinedProperty {
+                ty: ty.to_string(),
+                prop: prop.into(),
+                span,
+            }),
+        },
+        Type::Bool => match prop {
+            "to_str" => Ok(PropertyInfo {
+                ty: Type::Func {
+                    params: vec![],
+                    ret: Box::new(Type::String),
+                },
+                is_mutable: false,
+                needs_mutable_owner: false,
+            }),
             _ => Err(TypeError::UndefinedProperty {
                 ty: ty.to_string(),
                 prop: prop.into(),

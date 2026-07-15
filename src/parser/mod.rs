@@ -328,13 +328,6 @@ impl Parser {
 
                 Ok(Expr::ArrayLiteral(elements, span))
             }
-            TokenKind::Keyword(Keyword::Rec) => {
-                self.consume(
-                    &TokenKind::Keyword(Keyword::Func),
-                    "Expected 'func' after 'rec'",
-                )?;
-                self.parse_lambda(Some(String::new()), start_span)
-            }
             TokenKind::Keyword(Keyword::Func) => self.parse_lambda(None, start_span),
             TokenKind::Ident => {
                 if self.peek().kind == TokenKind::Delim(Delim::LCurly) {
@@ -630,16 +623,7 @@ impl Parser {
             "Expected expression after '=' in variable declaration",
         )?;
 
-        let mut value = self.parse_expression()?;
-
-        if let Expr::Func {
-            name: ref mut func_name,
-            ..
-        } = value
-            && func_name.as_ref().is_some_and(|n| n.is_empty())
-        {
-            *func_name = Some(name.clone())
-        }
+        let value = self.parse_expression()?;
 
         let end_tok = self.consume(
             &TokenKind::Delim(Delim::Semicolon),
