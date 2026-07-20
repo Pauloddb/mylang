@@ -1,4 +1,4 @@
-use std::{io::Write, rc::Rc};
+use std::{f64::consts::PI, io::Write, rc::Rc};
 
 use crate::evaluator::{env::EvalEnv, types::Value};
 
@@ -11,31 +11,22 @@ pub fn register_builtins(env: &Rc<EvalEnv>) {
 }
 
 fn builtins() -> Vec<(String, Value)> {
-    vec![("std".to_string(), std_module())]
+    basic_builtins()
 }
 
-fn std_module() -> Value {
-    Value::Module(vec![("io".to_string(), io_module())])
+fn basic_builtins() -> Vec<(String, Value)> {
+    vec![]
+}
+
+pub fn std_module() -> Value {
+    Value::Module(vec![
+        ("io".to_string(), io_module()),
+        ("math".to_string(), math_module()),
+    ])
 }
 
 fn io_module() -> Value {
     Value::Module(vec![
-        (
-            "print".to_string(),
-            Value::NativeFunc(Rc::new(move |args| {
-                let val = args[0].clone();
-                print!("{}", val);
-                Ok(Value::Nil)
-            })),
-        ),
-        (
-            "println".to_string(),
-            Value::NativeFunc(Rc::new(move |args| {
-                let val = args[0].clone();
-                println!("{}", val);
-                Ok(Value::Nil)
-            })),
-        ),
         (
             "readln".to_string(),
             Value::NativeFunc(Rc::new(move |args| {
@@ -53,6 +44,37 @@ fn io_module() -> Value {
                     .to_string();
 
                 Ok(Value::String(result))
+            })),
+        ),
+        (
+            "print".to_string(),
+            Value::NativeFunc(Rc::new(move |args| {
+                let val = args[0].clone();
+                print!("{}", val);
+                Ok(Value::Nil)
+            })),
+        ),
+        (
+            "println".to_string(),
+            Value::NativeFunc(Rc::new(move |args| {
+                let val = args[0].clone();
+                println!("{}", val);
+                Ok(Value::Nil)
+            })),
+        ),
+    ])
+}
+
+fn math_module() -> Value {
+    Value::Module(vec![
+        ("PI".to_string(), Value::Float(PI)),
+        (
+            "abs".to_string(),
+            Value::NativeFunc(Rc::new(move |args| {
+                let val = if let Value::Int(n) = &args[0] { *n } else { 0 }; // typechecker barra se não for int
+
+                let res = if val < 0 { -val } else { val };
+                Ok(Value::Int(res))
             })),
         ),
     ])

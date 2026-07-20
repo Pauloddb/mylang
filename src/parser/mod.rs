@@ -129,7 +129,7 @@ impl Parser {
             .lexeme
             .clone();
 
-        if self.peek().kind == TokenKind::Delim(Delim::LBracket) {
+        while self.peek().kind == TokenKind::Delim(Delim::LBracket) {
             self.next();
             self.consume(&TokenKind::Delim(Delim::RBracket), "Expected ']'")?;
             ty.push_str("[]");
@@ -444,6 +444,14 @@ impl Parser {
             TokenKind::Op(Op::BitXor) => {
                 let (_, rbp) = Self::infix_bp(&token.kind).unwrap();
                 self.binary(left, Op::BitXor, rbp)
+            }
+            TokenKind::Op(Op::Shl) => {
+                let (_, rbp) = Self::infix_bp(&token.kind).unwrap();
+                self.binary(left, Op::Shl, rbp)
+            }
+            TokenKind::Op(Op::Shr) => {
+                let (_, rbp) = Self::infix_bp(&token.kind).unwrap();
+                self.binary(left, Op::Shr, rbp)
             }
             TokenKind::Op(Op::And) => {
                 let (_, rbp) = Self::infix_bp(&token.kind).unwrap();

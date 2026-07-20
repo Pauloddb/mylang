@@ -29,27 +29,39 @@ impl Type {
             s if s.starts_with("func(") => {
                 let mut buf = String::new();
                 let mut params = vec![];
+                let mut paren_depth = 0u32;
 
                 let mut i = 0;
                 let remainder = &s[5..];
                 while i < remainder.len() {
                     let ch = remainder.chars().nth(i).unwrap();
                     match ch {
-                        ')' => {
-                            let ty = Type::from_str(&buf, span.clone(), registry)?;
-                            params.push(ty);
-
-                            buf.clear();
-                            break;
+                        '(' => {
+                            paren_depth += 1;
+                            buf.push(ch);
                         }
-                        ',' => {
-                            let ty = Type::from_str(&buf, span.clone(), registry)?;
-                            params.push(ty);
-
+                        ')' => {
+                            if paren_depth == 0 {
+                                if !buf.is_empty() {
+                                    let ty = Type::from_str(&buf, span.clone(), registry)?;
+                                    params.push(ty);
+                                }
+                                buf.clear();
+                                break;
+                            } else {
+                                paren_depth -= 1;
+                                buf.push(ch);
+                            }
+                        }
+                        ',' if paren_depth == 0 => {
+                            if !buf.is_empty() {
+                                let ty = Type::from_str(&buf, span.clone(), registry)?;
+                                params.push(ty);
+                            }
                             buf.clear();
                             i += 1;
                         }
-                        ch if ch.is_ascii_whitespace() => i += 1,
+                        ch if ch.is_ascii_whitespace() && paren_depth == 0 => i += 1,
                         _ => buf.push(ch),
                     }
                     i += 1;
@@ -86,8 +98,18 @@ impl Type {
                 })
             }
             s if s.ends_with("[]") => {
-                let ty = Type::from_str(&s[..(s.len() - 2)], span, registry)?;
-                Ok(Self::Array(Box::new(ty)))
+                let mut brackets = 0;
+                let mut inner = s;
+                while inner.ends_with("[]") {
+                    inner = &inner[..inner.len() - 2];
+                    brackets += 1;
+                }
+                let ty = Type::from_str(inner, span, registry)?;
+                let mut result = ty;
+                for _ in 0..brackets {
+                    result = Self::Array(Box::new(result));
+                }
+                Ok(result)
             }
             s => registry.resolve(s).ok_or(TypeError::UnknownType {
                 name: s.to_string(),
@@ -106,7 +128,7 @@ impl fmt::Display for Type {
             Type::String => write!(f, "string"),
             Type::Void => write!(f, "void"),
             Type::Array(ty) => {
-                write!(f, "{}[]", ty.to_string())
+                write!(f, "{}[]", ty)
             }
             Type::Func { params, ret } => {
                 write!(f, "func(")?;
@@ -229,6 +251,32 @@ pub enum TypedExpr {
         ty: Type,
         span: Span,
     },
+}
+
+impl TypedExpr {
+    pub fn span(&self) -> Span {
+        match self {
+            TypedExpr::Int(_, span) => span.clone(),
+            TypedExpr::Float(_, span) => span.clone(),
+            TypedExpr::Bool(_, span) => span.clone(),
+            TypedExpr::String(_, span) => span.clone(),
+            TypedExpr::Nil(span) => span.clone(),
+            TypedExpr::Ident(_, _, span) => span.clone(),
+            TypedExpr::Unary { span, .. } => span.clone(),
+            TypedExpr::Binary { span, .. } => span.clone(),
+            TypedExpr::Assign { span, .. } => span.clone(),
+            TypedExpr::Call { span, .. } => span.clone(),
+            TypedExpr::Index { span, .. } => span.clone(),
+            TypedExpr::Block(_, _, span) => span.clone(),
+            TypedExpr::Func { span, .. } => span.clone(),
+            TypedExpr::Cast { span, .. } => span.clone(),
+            TypedExpr::Property { span, .. } => span.clone(),
+            TypedExpr::If { span, .. } => span.clone(),
+            TypedExpr::ArrayLiteral(_, _, span) => span.clone(),
+            TypedExpr::Path { span, .. } => span.clone(),
+            TypedExpr::Struct { span, .. } => span.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

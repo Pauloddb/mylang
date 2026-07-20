@@ -96,6 +96,9 @@ pub enum TypeError {
     #[error("[{span}] type `{ns_ty}` is not a namespace")]
     InvalidNamespace { ns_ty: String, span: Span },
 
+    #[error("[{span}] public declaration inside scope")]
+    PubDeclInsideScope { span: Span },
+
     #[error("{msg}")]
     LexError { msg: String },
 

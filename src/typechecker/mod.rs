@@ -17,12 +17,12 @@ use mylang::EXTENSION;
 
 use crate::{
     lexer::{
-        types::{Op, Span},
         Lexer,
+        types::{Op, Span},
     },
     parser::{
-        types::{AssignTarget, Ast, Expr, Stmt},
         Parser,
+        types::{AssignTarget, Ast, Expr, Stmt},
     },
     typechecker::{
         env::{Binding, TypeEnv},
@@ -337,7 +337,6 @@ impl TypeChecker {
                         }
 
                         let elem_ty = match &obj_ty {
-                            Type::String => Type::String,
                             Type::Array(elem) => *elem.clone(),
                             _ => {
                                 return Err(TypeError::NotIndexable {
@@ -494,10 +493,39 @@ impl TypeChecker {
             }
             Expr::Call { callee, args, span } => {
                 // Import builtin
-                if let Expr::Ident(name, _) = callee.as_ref() {
-                    if name == "import" {
-                        if let Expr::String(path, _) = &args[0] {
-                            return self.resolve_import(path.clone(), span.clone());
+                if let Expr::Ident(name, _) = callee.as_ref()
+                    && name == "import"
+                    && let Expr::String(module, _) = &args[0]
+                {
+                    return if module == "std" {
+                        Ok(builtins::std_module())
+                    } else {
+                        self.resolve_import(module.clone(), span.clone())
+                    };
+                }
+
+                if let Expr::Property { object, prop, span } = callee.as_ref()
+                    && let Ok(obj_ty) = self.infer_expr(object, None)
+                    && let Ok(info) = property_info(&obj_ty, prop, span.clone())
+                    && info.needs_mutable_owner
+                {
+                    let mut current = object.as_ref();
+                    loop {
+                        match current {
+                            Expr::Property { object: inner, .. } => current = inner.as_ref(),
+                            Expr::Ident(name, _) => {
+                                if let Some(binding) = self.lookup_var(name)
+                                    && !binding.is_mutable
+                                {
+                                    return Err(TypeError::ImmutableMutation {
+                                        name: format!("{}.{}", obj_ty, prop),
+                                        span: span.clone(),
+                                    });
+                                }
+
+                                break;
+                            }
+                            _ => break,
                         }
                     }
                 }
@@ -591,7 +619,6 @@ impl TypeChecker {
                 }
 
                 match obj_ty {
-                    Type::String => Ok(Type::String),
                     Type::Array(elem) => Ok(*elem),
                     _ => Err(TypeError::NotIndexable {
                         ty: obj_ty.to_string(),
@@ -603,10 +630,11 @@ impl TypeChecker {
                 self.push_scope();
 
                 let mut last_ty = Type::Void;
+                let mut early_return = None;
 
                 for stmt in stmts {
-                    last_ty = match stmt {
-                        Stmt::Expr(expr) => self.infer_expr(expr, None)?,
+                    let result = match stmt {
+                        Stmt::Expr(expr) => self.infer_expr(expr, None),
                         Stmt::VarDecl {
                             name,
                             type_annotation,
@@ -615,6 +643,10 @@ impl TypeChecker {
                             is_public,
                             span,
                         } => {
+                            if *is_public && self.env.borrow().is_inside_scope() {
+                                return Err(TypeError::PubDeclInsideScope { span: span.clone() });
+                            }
+
                             let ann_ty = type_annotation
                                 .as_ref()
                                 .map(|ann| {
@@ -641,7 +673,7 @@ impl TypeChecker {
                             };
 
                             self.define_var(name.clone(), &ty, *is_mutable, *is_public);
-                            Type::Void
+                            Ok(Type::Void)
                         }
                         Stmt::StructDecl {
                             name,
@@ -649,6 +681,10 @@ impl TypeChecker {
                             is_public,
                             span,
                         } => {
+                            if *is_public && self.env.borrow().is_inside_scope() {
+                                return Err(TypeError::PubDeclInsideScope { span: span.clone() });
+                            }
+
                             if self.env.borrow().is_inside_scope() {
                                 return Err(TypeError::StructDeclInsideScope {
                                     span: span.clone(),
@@ -679,7 +715,7 @@ impl TypeChecker {
                                 typed_fields,
                                 span.clone(),
                             )?;
-                            Type::Void
+                            Ok(Type::Void)
                         }
                         Stmt::Return(expr, span) => {
                             let has_ret = self.current_ret.borrow().is_some();
@@ -696,9 +732,9 @@ impl TypeChecker {
                                         });
                                     }
 
-                                    return Ok(ty);
+                                    Ok(ty)
                                 } else {
-                                    return Ok(Type::Void);
+                                    Ok(Type::Void)
                                 }
                             } else {
                                 return Err(TypeError::ReturnOutsideFunction {
@@ -723,27 +759,45 @@ impl TypeChecker {
 
                             self.is_inside_loop.replace(old_loop);
 
-                            Type::Void
+                            Ok(Type::Void)
                         }
                         Stmt::Break(span) => {
                             if *self.is_inside_loop.borrow() {
-                                Type::Void
+                                Ok(Type::Void)
                             } else {
                                 return Err(TypeError::BreakOutsideLoop { span: span.clone() });
                             }
                         }
                         Stmt::Continue(span) => {
                             if *self.is_inside_loop.borrow() {
-                                Type::Void
+                                Ok(Type::Void)
                             } else {
                                 return Err(TypeError::ContinueOutsideLoop { span: span.clone() });
                             }
                         }
                     };
+
+                    match result {
+                        Ok(ty) => {
+                            // If this statement returned via `return`, capture it and stop
+                            if matches!(stmt, Stmt::Return(..)) {
+                                early_return = Some(ty);
+                                break;
+                            }
+                            last_ty = ty;
+                        }
+                        Err(e) => {
+                            self.pop_scope();
+                            return Err(e);
+                        }
+                    }
                 }
 
                 self.pop_scope();
-                Ok(last_ty)
+                match early_return {
+                    Some(ty) => Ok(ty),
+                    None => Ok(last_ty),
+                }
             }
             Expr::Cast {
                 object,
@@ -849,6 +903,15 @@ impl TypeChecker {
                 let old_ret = self.current_ret.borrow().clone();
 
                 let typed_body = self.check_expr(body)?;
+                let body_ty = self.infer_expr(body, None)?;
+
+                if body_ty != ret {
+                    return Err(TypeError::ReturnMismatch {
+                        expected: ret.to_string(),
+                        found: body_ty.to_string(),
+                        span: span.clone(),
+                    });
+                }
 
                 *self.current_ret.borrow_mut() = old_ret;
                 self.pop_scope();
@@ -1074,6 +1137,10 @@ impl TypeChecker {
                 is_public,
                 span,
             } => {
+                if *is_public && self.env.borrow().is_inside_scope() {
+                    return Err(TypeError::PubDeclInsideScope { span: span.clone() });
+                }
+
                 let ann_ty = type_annotation
                     .as_ref()
                     .map(|ann| Type::from_str(ann, span.clone(), &self.registry.borrow()))
@@ -1185,7 +1252,6 @@ impl TypeChecker {
 
                         let typed_ret_expr = self.check_expr(e)?;
 
-                        *self.current_ret.borrow_mut() = None;
                         Ok(TypedStmt::Return(Some(typed_ret_expr), span.clone()))
                     } else {
                         Ok(TypedStmt::Return(None, span.clone()))

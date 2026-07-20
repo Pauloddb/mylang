@@ -158,9 +158,7 @@ impl Evaluator {
                     fields: Rc::new(RefCell::new(fields_values)),
                 })
             }
-            TypedExpr::Func {
-                params, body, ..
-            } => {
+            TypedExpr::Func { params, body, .. } => {
                 let value = Value::Func {
                     params: params.clone(),
                     body: body.clone(),
@@ -196,7 +194,13 @@ impl Evaluator {
                             }
                         };
 
-                        self.define_var(name.clone(), new_val.clone(), true);
+                        if !self.env.borrow().set(name, new_val.clone()) {
+                            return Err(EvalError::UndefinedVar {
+                                name: name.clone(),
+                                span: var_span.clone(),
+                            });
+                        }
+
                         Ok(new_val)
                     }
                     TypedExpr::Property { object, prop, .. } => {
@@ -475,7 +479,13 @@ impl Evaluator {
                             });
                         }
 
-                        self.define_var(name.clone(), val.clone(), true);
+                        if !self.env.borrow().set(name, val.clone()) {
+                            return Err(EvalError::UndefinedVar {
+                                name: name.clone(),
+                                span: var_span.clone(),
+                            });
+                        }
+
                         Ok(val)
                     }
                     TypedAssignTarget::Index {
@@ -499,22 +509,6 @@ impl Evaluator {
 
                         match &index_val {
                             Value::Int(i) => match &obj_val {
-                                Value::String(s) => {
-                                    if *i < s.len() as i64 {
-                                        let idx = if *i >= 0 {
-                                            *i as usize
-                                        } else {
-                                            s.len() - (-i) as usize
-                                        };
-
-                                        Ok(Value::String(s.chars().nth(idx).unwrap().to_string()))
-                                    } else {
-                                        Err(EvalError::IndexError {
-                                            msg: format!("index {} on size {}", i, s.len()),
-                                            span: span.clone(),
-                                        })
-                                    }
-                                }
                                 Value::Array(elements) => {
                                     if *i < elements.borrow().len() as i64 {
                                         let idx = if *i >= 0 {
@@ -523,7 +517,7 @@ impl Evaluator {
                                             elements.borrow().len() - (-i) as usize
                                         };
 
-                                        let val = elements.borrow()[idx].clone();
+                                        elements.borrow_mut()[idx] = val.clone();
                                         Ok(val)
                                     } else {
                                         Err(EvalError::IndexError {
@@ -593,9 +587,39 @@ impl Evaluator {
             } => {
                 if let TypedExpr::Ident(name, _, _) = callee.as_ref()
                     && name == "import"
+                    && let TypedExpr::String(module, _) = &args[0]
                 {
-                    if let TypedExpr::String(path, _) = &args[0] {
-                        return self.resolve_import(path.clone(), span.clone());
+                    return if module == "std" {
+                        Ok(builtins::std_module())
+                    } else {
+                        self.resolve_import(module.clone(), span.clone())
+                    };
+                }
+
+                if let TypedExpr::Property {
+                    object, prop, span, ..
+                } = callee.as_ref()
+                    && let Ok(obj_val) = self.eval_expr(object)
+                    && let Ok(info) = property_info(&obj_val, prop, span.clone())
+                    && info.needs_mutable_owner
+                {
+                    let mut current = object.as_ref();
+                    loop {
+                        match current {
+                            TypedExpr::Property { object: inner, .. } => current = inner.as_ref(),
+                            TypedExpr::Ident(name, _, var_span) => {
+                                if let Ok(binding) = self.lookup_var(name, var_span)
+                                    && !binding.is_mutable
+                                {
+                                    return Err(EvalError::ImmutableMutation {
+                                        name: name.clone(),
+                                        span: span.clone(),
+                                    });
+                                }
+                                break;
+                            }
+                            _ => break,
+                        }
                     }
                 }
 
@@ -768,6 +792,10 @@ impl Evaluator {
                 self.push_scope();
                 for stmt in stmts.iter() {
                     last = self.eval_stmt(stmt)?;
+
+                    if self.break_flag.get() || self.continue_flag.get() {
+                        break;
+                    }
                 }
                 self.pop_scope();
 

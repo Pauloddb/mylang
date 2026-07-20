@@ -11,15 +11,29 @@ pub fn register_builtins(env: &Rc<TypeEnv>) {
 }
 
 fn builtins() -> Vec<(String, Type)> {
-    vec![("std".to_string(), std_module())]
+    basic_builtins()
 }
 
-fn std_module() -> Type {
-    Type::Module(vec![("io".to_string(), io_module())])
+fn basic_builtins() -> Vec<(String, Type)> {
+    vec![]
+}
+
+pub fn std_module() -> Type {
+    Type::Module(vec![
+        ("io".to_string(), io_module()),
+        ("math".to_string(), math_module()),
+    ])
 }
 
 fn io_module() -> Type {
     Type::Module(vec![
+        (
+            "readln".to_string(),
+            Type::Func {
+                params: vec![Type::String],
+                ret: Box::new(Type::String),
+            },
+        ),
         (
             "print".to_string(),
             Type::Func {
@@ -34,11 +48,17 @@ fn io_module() -> Type {
                 ret: Box::new(Type::Void),
             },
         ),
+    ])
+}
+
+fn math_module() -> Type {
+    Type::Module(vec![
+        ("PI".to_string(), Type::Float),
         (
-            "readln".to_string(),
+            "abs".to_string(),
             Type::Func {
-                params: vec![Type::String],
-                ret: Box::new(Type::String),
+                params: vec![Type::Int],
+                ret: Box::new(Type::Int),
             },
         ),
     ])

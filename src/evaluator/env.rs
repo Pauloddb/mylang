@@ -31,6 +31,17 @@ impl EvalEnv {
         self.bindings.borrow_mut().insert(name, binding);
     }
 
+    pub fn set(&self, name: &str, value: Value) -> bool {
+        if self.bindings.borrow().contains_key(name) {
+            self.bindings.borrow_mut().get_mut(name).unwrap().value = value;
+            true
+        } else if let Some(parent) = &self.parent {
+            parent.set(name, value)
+        } else {
+            false
+        }
+    }
+
     pub fn lookup(&self, name: &str, span: &Span) -> Result<Binding, EvalError> {
         let borrowed = self.bindings.borrow();
         let result = borrowed.get(name);
