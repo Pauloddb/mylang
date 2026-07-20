@@ -73,4 +73,6 @@ pub enum OpCode {
     // === ++ / -- ===
     Increment(u8),
     Decrement(u8),
+    IncrementUpvalue(u8),
+    DecrementUpvalue(u8),
 }

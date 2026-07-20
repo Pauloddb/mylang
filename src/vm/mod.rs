@@ -488,6 +488,30 @@ impl Vm {
                     };
                     self.stack.push(result);
                 }
+                OpCode::IncrementUpvalue(idx) => {
+                    let frame = self.frames.last().unwrap();
+                    let mut v = frame.closure.upvalues[idx as usize].borrow_mut();
+                    match &*v {
+                        Value::Int(n) => {
+                            let r = Value::Int(*n + 1);
+                            *v = r.clone();
+                            self.stack.push(r);
+                        }
+                        _ => unreachable!("typechecker bug"),
+                    }
+                }
+                OpCode::DecrementUpvalue(idx) => {
+                    let frame = self.frames.last().unwrap();
+                    let mut v = frame.closure.upvalues[idx as usize].borrow_mut();
+                    match &*v {
+                        Value::Int(n) => {
+                            let r = Value::Int(*n - 1);
+                            *v = r.clone();
+                            self.stack.push(r);
+                        }
+                        _ => unreachable!("typechecker bug"),
+                    }
+                }
                 OpCode::AsInt => {
                     let val = self.stack.pop().unwrap().clone();
 

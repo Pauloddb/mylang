@@ -105,7 +105,9 @@ impl Chunk {
             }
             OpCode::Pop => println!("POP"),
             OpCode::Increment(slot) => println!("INCREMENT {}", slot),
+            OpCode::IncrementUpvalue(idx) => println!("INCREMENT_UPVALUE {}", idx),
             OpCode::Decrement(slot) => println!("DECREMENT {}", slot),
+            OpCode::DecrementUpvalue(idx) => println!("DECREMENT_UPVALUE {}", idx),
             OpCode::Rotate(n) => println!("ROTATE {}", n),
         }
     }
@@ -166,7 +168,9 @@ impl Display for Chunk {
                 }
                 OpCode::Pop => writeln!(f, "POP")?,
                 OpCode::Increment(slot) => writeln!(f, "INCREMENT {}", slot)?,
+                OpCode::IncrementUpvalue(idx) => writeln!(f, "INCREMENT_UPVALUE {}", idx)?,
                 OpCode::Decrement(slot) => writeln!(f, "DECREMENT {}", slot)?,
+                OpCode::DecrementUpvalue(idx) => writeln!(f, "DECREMENT_UPVALUE {}", idx)?,
                 OpCode::Rotate(n) => writeln!(f, "ROTATE {}", n)?,
             }
         }

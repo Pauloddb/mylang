@@ -222,11 +222,14 @@ impl Compiler {
                         TypedExpr::Ident(name, _, _) => {
                             let slot = match self.resolve_var(name) {
                                 Resolution::Local(s) => s,
-                                Resolution::Upvalue(_) => {
-                                    return Err(self.internal(
-                                        span.clone(),
-                                        "++/-- em upvalues não implementado",
-                                    ));
+                                Resolution::Upvalue(idx) => {
+                                    let opcode = match op {
+                                        Op::PlusPlus => OpCode::IncrementUpvalue(idx),
+                                        Op::MinusMinus => OpCode::DecrementUpvalue(idx),
+                                        _ => unreachable!("typechecker bug"),
+                                    };
+                                    self.emit(opcode, span.clone());
+                                    return Ok(());
                                 }
                                 Resolution::Global => {
                                     return Err(CompileError::UndefinedVariable {
