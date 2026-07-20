@@ -17,7 +17,6 @@ struct Local {
     pub name: String,
     pub slot: u8,
     pub depth: u32,
-    pub is_mutable: bool,
 }
 
 #[derive(Clone)]
@@ -78,7 +77,7 @@ impl Compiler {
     }
 
     fn register_builtins(&mut self) {
-        self.add_local("import".to_string(), false);
+        self.add_local("import".to_string());
     }
 
     fn emit(&mut self, opcode: OpCode, span: Span) {
@@ -166,13 +165,12 @@ impl Compiler {
         self.locals.iter().rev().find(|l| l.name == name)
     }
 
-    fn add_local(&mut self, name: String, is_mutable: bool) {
+    fn add_local(&mut self, name: String) {
         let slot = self.locals.len() as u8;
         self.locals.push(Local {
             name,
             slot,
             depth: self.scope_depth,
-            is_mutable,
         });
     }
 
@@ -424,7 +422,7 @@ impl Compiler {
                 inner.func_depth = self.func_depth;
 
                 for param in params {
-                    inner.add_local(param.name.clone(), false);
+                    inner.add_local(param.name.clone());
                 }
 
                 inner.parent = Some(Rc::new(RefCell::new(self.clone())));
@@ -505,7 +503,6 @@ impl Compiler {
             TypedStmt::VarDecl {
                 name,
                 value,
-                is_mutable,
                 is_public,
                 span,
                 ..
@@ -519,12 +516,18 @@ impl Compiler {
                 }
 
                 if matches!(value.as_ref(), TypedExpr::Func { .. }) {
-                    // 1. Aloca slot para o nome ANTES
-                    self.add_local(name.clone(), *is_mutable);
+                    self.add_local(name.clone());
+                    self.emit(OpCode::Nil, span.clone());
+
                     self.compile_expr(value)?;
+
+                    if let Resolution::Local(slot) = self.resolve_var(name) {
+                        self.emit(OpCode::SetLocal(slot), span.clone());
+                        self.emit(OpCode::Pop, span.clone()); // ← remove closure extra da stack
+                    }
                 } else {
                     self.compile_expr(value)?;
-                    self.add_local(name.clone(), *is_mutable);
+                    self.add_local(name.clone());
                 }
             }
             TypedStmt::While { cond, body, span } => {

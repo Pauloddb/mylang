@@ -1,11 +1,7 @@
 use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
 
 use crate::{
-    compiler::{
-        Compiler,
-        chunk::Chunk,
-        opcode::OpCode::{self, SetProperty},
-    },
+    compiler::{Compiler, chunk::Chunk, opcode::OpCode},
     lexer::Lexer,
     parser::Parser,
     typechecker::TypeChecker,
@@ -118,14 +114,24 @@ impl Vm {
                 }
                 OpCode::GetLocal(slot) => {
                     let base = self.current_frame_base();
-                    let val = self.stack[base + slot as usize].clone();
+                    let cell = &self.stack[base + slot as usize];
+
+                    let val = match cell {
+                        Value::Upvalue(rc) => rc.borrow().clone(),
+                        other => other.clone(),
+                    };
 
                     self.stack.push(val);
                 }
                 OpCode::SetLocal(slot) => {
                     let val = self.stack.pop().unwrap().clone();
                     let base = self.current_frame_base();
-                    self.stack[base + slot as usize] = val.clone();
+
+                    match &self.stack[base + slot as usize] {
+                        Value::Upvalue(rc) => *rc.borrow_mut() = val.clone(),
+                        _ => self.stack[base + slot as usize] = val.clone(),
+                    }
+
                     self.stack.push(val);
                 }
                 // === Aritmética ===
@@ -245,7 +251,13 @@ impl Vm {
                     let a = self.stack.pop().unwrap().clone();
 
                     let result = match (&a, &b) {
-                        (Value::Int(x), Value::Int(y)) => Value::Int(x.pow(*y as u32)),
+                        (Value::Int(x), Value::Int(y)) => {
+                            if *y >= 0 {
+                                Value::Int(x.pow(*y as u32))
+                            } else {
+                                Value::Float((*x as f64).powf(*y as f64))
+                            }
+                        }
                         (Value::Float(x), Value::Int(y)) => Value::Float(x.powi(*y as i32)),
                         (Value::Int(x), Value::Float(y)) => Value::Float((*x as f64).powf(*y)),
                         (Value::Float(x), Value::Float(y)) => Value::Float(x.powf(*y)),
@@ -428,12 +440,23 @@ impl Vm {
                     self.stack.push(result);
                 }
                 OpCode::Increment(slot) => {
-                    let val = self.stack[slot as usize].clone();
+                    let base = self.current_frame_base();
+                    let slot_val = &self.stack[base + slot as usize].clone();
 
-                    let result = match &val {
+                    let result = match slot_val {
+                        Value::Upvalue(rc) => {
+                            let mut v = rc.borrow_mut();
+                            if let Value::Int(n) = &*v {
+                                let r = Value::Int(*n + 1);
+                                *v = r.clone();
+                                r
+                            } else {
+                                unreachable!("typechecker bug")
+                            }
+                        }
                         Value::Int(n) => {
                             let v = Value::Int(*n + 1);
-                            self.stack[slot as usize] = v.clone();
+                            self.stack[base + slot as usize] = v.clone();
                             v
                         }
                         _ => unreachable!("typechecker bug"),
@@ -441,12 +464,23 @@ impl Vm {
                     self.stack.push(result);
                 }
                 OpCode::Decrement(slot) => {
-                    let val = self.stack[slot as usize].clone();
+                    let base = self.current_frame_base();
+                    let slot_val = &self.stack[base + slot as usize].clone();
 
-                    let result = match &val {
+                    let result = match slot_val {
+                        Value::Upvalue(rc) => {
+                            let mut v = rc.borrow_mut();
+                            if let Value::Int(n) = &*v {
+                                let r = Value::Int(*n - 1);
+                                *v = r.clone();
+                                r
+                            } else {
+                                unreachable!("typechecker bug")
+                            }
+                        }
                         Value::Int(n) => {
                             let v = Value::Int(*n - 1);
-                            self.stack[slot as usize] = v.clone();
+                            self.stack[base + slot as usize] = v.clone();
                             v
                         }
                         _ => unreachable!("typechecker bug"),
@@ -507,6 +541,9 @@ impl Vm {
                         elements.push(val);
                     }
 
+                    eprintln!("[DEBUG Array] popped (LIFO order): {:?}", elements);
+
+                    elements.reverse();
                     self.stack
                         .push(Value::Array(Rc::new(RefCell::new(elements))));
                 }
@@ -518,15 +555,23 @@ impl Vm {
 
                     let mut upvalues = Vec::with_capacity(n_upv as usize);
                     for spec in closure.upvalues_specs.iter() {
-                        let val = if spec.is_local {
+                        if spec.is_local {
                             let frame_base = self.current_frame_base();
-                            self.stack[frame_base + spec.slot as usize].clone()
+                            let slot = &mut self.stack[frame_base + spec.slot as usize];
+
+                            let rc = match slot {
+                                Value::Upvalue(existing) => existing.clone(),
+                                _ => {
+                                    let rc = Rc::new(RefCell::new(slot.clone()));
+                                    *slot = Value::Upvalue(rc.clone());
+                                    rc
+                                }
+                            };
+                            upvalues.push(rc);
                         } else {
                             let caller_closure = self.frames.last().unwrap().closure.clone();
-                            caller_closure.upvalues[spec.slot as usize].borrow().clone()
-                        };
-
-                        upvalues.push(Rc::new(RefCell::new(val)));
+                            upvalues.push(caller_closure.upvalues[spec.slot as usize].clone());
+                        }
                     }
 
                     let new_closure = Closure {
@@ -615,6 +660,12 @@ impl Vm {
                                 }
 
                                 let val = elements.borrow()[index as usize].clone();
+                                eprintln!(
+                                    "[DEBUG IndexGet] arr[{}] = {:?}  (array len={})",
+                                    index,
+                                    val,
+                                    elements.borrow().len()
+                                );
                                 self.stack.push(val);
                             }
                         }
@@ -634,7 +685,7 @@ impl Vm {
                     match &obj {
                         Value::Array(elements) => {
                             if index < 0 {
-                                if elements.borrow().len() < index as usize {
+                                if (-index as usize) > elements.borrow().len() {
                                     return Err(VmError::IndexError {
                                         msg: "index out of bounds".to_string(),
                                         span: span.clone(),

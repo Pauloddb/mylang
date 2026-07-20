@@ -4,9 +4,6 @@ use crate::lexer::types::Span;
 
 #[derive(Debug, Error)]
 pub enum VmError {
-    #[error("[{span}] undefined variable: `{name}`")]
-    UndefinedVariable { name: String, span: Span },
-
     #[error("[{span}] immutable mutation: cannot mutate immutable variable `{name}`")]
     ImmutableMutation { name: String, span: Span },
 
@@ -28,9 +25,6 @@ pub enum VmError {
 
     #[error("[{span}] value `{value}` has no properties")]
     NoProperties { value: String, span: Span },
-
-    #[error("[{span}] value `{ns_val}` is not a namespace")]
-    InvalidNamespace { ns_val: String, span: Span },
 
     #[error("[{span}] division by zero")]
     DivisionByZero { span: Span },

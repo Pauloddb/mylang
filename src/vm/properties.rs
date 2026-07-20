@@ -64,7 +64,7 @@ pub fn property_info(object: &Value, prop: &str, span: Span) -> Result<PropertyI
             }
         }
         Value::Int(n) => {
-            let n = n.clone();
+            let n = *n;
             match prop {
                 "to_str" => Ok(PropertyInfo {
                     value: Value::NativeFunc(Rc::new(move |_args| {
@@ -81,7 +81,7 @@ pub fn property_info(object: &Value, prop: &str, span: Span) -> Result<PropertyI
             }
         }
         Value::Float(n) => {
-            let n = n.clone();
+            let n = *n;
             match prop {
                 "to_str" => Ok(PropertyInfo {
                     value: Value::NativeFunc(Rc::new(move |_args| {
@@ -98,7 +98,7 @@ pub fn property_info(object: &Value, prop: &str, span: Span) -> Result<PropertyI
             }
         }
         Value::Bool(b) => {
-            let b = b.clone();
+            let b = *b;
             match prop {
                 "to_str" => Ok(PropertyInfo {
                     value: Value::NativeFunc(Rc::new(move |_args| {
