@@ -91,11 +91,12 @@ impl Vm {
         while self.ip < self.chunk.code.len() {
             let opcode = self.chunk.code[self.ip].clone();
             let span = self.chunk.spans[self.ip].clone();
-            self.ip += 1;
 
             if debug_mode {
-                println!("[DEBUG] Executing opcode {:?}", opcode);
+                println!("[DEBUG] {:04} Executing opcode {:?}", self.ip, opcode);
             }
+
+            self.ip += 1;
 
             match opcode {
                 OpCode::Const(idx) => self.stack.push(self.chunk.consts[idx].clone()),

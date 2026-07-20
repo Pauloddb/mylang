@@ -18,6 +18,8 @@ use crate::{compiler::Compiler, lexer::Lexer, parser::Parser, typechecker::TypeC
 )]
 struct Cli {
     filepath: PathBuf,
+    #[arg(short, long)]
+    debug: bool,
 }
 
 fn main() -> Result<()> {
@@ -28,16 +30,12 @@ fn main() -> Result<()> {
         args.filepath.to_string_lossy().into_owned()
     ))?;
 
-    println!("Lexing...");
     let tokens = Lexer::new(&source_code, args.filepath.to_string_lossy().into_owned()).lex()?;
 
-    println!("Parsing...");
     let ast = Parser::new(tokens.clone()).parse()?;
 
-    println!("Checking...");
     let typed_ast = TypeChecker::new(args.filepath.clone()).check(&ast)?;
 
-    println!("Compiling...");
     let (chunk, pub_locals) =
         Compiler::compile(args.filepath.clone().to_str().unwrap(), &typed_ast)?;
 
@@ -45,11 +43,10 @@ fn main() -> Result<()> {
         .iter()
         .for_each(|(name, slot)| println!("pub local `{}` in slot {}", name, slot));
 
-    chunk.disassemble();
+    // chunk.disassemble();
 
-    println!("Running...");
-    let final_stack = Vm::new(chunk).run(false)?;
-    dbg!(&final_stack);
+    let _final_stack = Vm::new(chunk).run(args.debug)?;
+    // dbg!(&final_stack);
 
     Ok(())
 }
